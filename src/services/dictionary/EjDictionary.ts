@@ -15,7 +15,7 @@ export class EjDictionary implements JaDictionary {
     const c = w[0];
     const key = c >= 'a' && c <= 'z' ? c : 'other';
     const shard = await this.load(key);
-    return shard[w] ?? null;
+    return Object.hasOwn(shard, w) ? shard[w] : null;
   }
 
   private load(key: string): Promise<Shard> {

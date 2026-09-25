@@ -45,4 +45,9 @@ describe('EjDictionary', () => {
     expect(await d.lookup('apple')).toBe('りんご');
     expect(f).toHaveBeenCalledTimes(2);
   });
+  it('プロトタイプ由来のキーは見出し語としてヒットしない', async () => {
+    const d = new EjDictionary('/dict', fakeFetch({ c: { cat: '猫' } }));
+    expect(await d.lookup('constructor')).toBeNull();
+    expect(await d.lookup('cat')).toBe('猫');
+  });
 });

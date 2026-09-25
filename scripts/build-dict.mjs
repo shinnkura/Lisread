@@ -26,7 +26,9 @@ export function shardKey(word) {
 export function build(tsvPath, outDir) {
   const map = parseTsv(readFileSync(tsvPath, 'utf8'));
   const shards = {};
-  for (const [w, m] of map) (shards[shardKey(w)] ??= {})[w] = m;
+  // プロトタイプなしのオブジェクトにすることで、"__proto__" などの見出し語が
+  // setter として解釈されて壊れるのを防ぐ
+  for (const [w, m] of map) (shards[shardKey(w)] ??= Object.create(null))[w] = m;
   mkdirSync(outDir, { recursive: true });
   for (const [k, obj] of Object.entries(shards)) writeFileSync(join(outDir, `${k}.json`), JSON.stringify(obj));
   return map.size;
