@@ -70,6 +70,7 @@ export function TtsLabView() {
       // iPhone Safari は GPU 対応版（21MB）の wasm をコンパイルできないため、
       // 先に軽量な wasm 専用ビルドを初期化しておく。transformers.js は初期化済みのランタイムを再利用する
       await initOrtWasmOnly();
+      add('軽量ランタイム起動済み');
       const { KokoroTTS } = await import('kokoro-js');
       const { env } = await import('@huggingface/transformers');
       // iOS Safari 対策: SharedArrayBuffer が使えないため 1 スレッド・プロキシ無しで初期化する
@@ -101,6 +102,14 @@ export function TtsLabView() {
     ort.env.wasm.proxy = false;
     // wasm 本体（約 11MB）はバンドルに含めず CDN から取得する
     ort.env.wasm.wasmPaths = ORT_WASM_CDN;
+    // 読み込むだけでは起動されない。ダミーのセッション作成で wasm を実際に起動しておくと、
+    // 以後 transformers.js（Kokoro）は起動済みのこの軽量ランタイムを再利用する
+    try {
+      await ort.InferenceSession.create(new Uint8Array([0, 1, 2, 3]), { executionProviders: ['wasm'] });
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      if (/no available backend|Out of memory/i.test(msg)) throw e;
+    }
     return ort;
   };
 
@@ -108,14 +117,11 @@ export function TtsLabView() {
     setBusy(true);
     const t0 = performance.now();
     try {
-      const ort = await initOrtWasmOnly();
       add('ORT wasm 専用ビルドの初期化を開始（wasm は CDN から取得）');
-      await ort.InferenceSession.create(new Uint8Array([0, 1, 2, 3]), { executionProviders: ['wasm'] });
-      add('（想定外）ダミーモデルで成功');
+      await initOrtWasmOnly();
+      add(`初期化は成功 / ${((performance.now() - t0) / 1000).toFixed(1)} 秒`);
     } catch (e) {
-      const msg = (e as Error).message ?? String(e);
-      const initOk = !/no available backend|Out of memory/i.test(msg);
-      add(`${initOk ? '初期化は成功（モデル解析で失敗、これは想定どおり）' : '初期化に失敗'}: ${msg.slice(0, 200)} / ${((performance.now() - t0) / 1000).toFixed(1)} 秒`);
+      add(`初期化に失敗: ${((e as Error).message ?? String(e)).slice(0, 200)}`);
     } finally {
       setBusy(false);
     }
