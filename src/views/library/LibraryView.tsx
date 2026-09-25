@@ -24,6 +24,7 @@ export function LibraryView() {
             onLongPress={() => { if (confirm(`「${b.title}」を削除しますか？保存した単語も消えます。`)) void lib.deleteBook(b.id); }} />
         ))}
       </div>
+      <p className="empty"><button className="lab-link" onClick={() => navigate({ name: 'ttsLab' })}>読み上げ検証（試作）</button></p>
       <Toast message={lib.error} onClose={lib.clearError} />
     </div>
   );

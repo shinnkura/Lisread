@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 
-export type Route = { name: 'library' } | { name: 'reader'; bookId: string };
+export type Route = { name: 'library' } | { name: 'reader'; bookId: string } | { name: 'ttsLab' };
 
 export function parseHash(hash: string): Route {
+  if (hash === '#/tts-lab') return { name: 'ttsLab' };
   const m = /^#\/book\/([^/]+)$/.exec(hash);
   return m ? { name: 'reader', bookId: decodeURIComponent(m[1]) } : { name: 'library' };
 }
 export function toHash(route: Route): string {
+  if (route.name === 'ttsLab') return '#/tts-lab';
   return route.name === 'reader' ? `#/book/${encodeURIComponent(route.bookId)}` : '#/';
 }
 export function navigate(route: Route) {

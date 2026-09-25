@@ -1,0 +1,8 @@
+.lab-body { padding: 0 var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: var(--space-3); }
+.lab-row { display: flex; gap: var(--space-4); flex-wrap: wrap; }
+.lab-row label, .lab-block { display: flex; align-items: center; gap: var(--space-2); }
+.lab select, .lab-text { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.lab-text { width: 100%; font-family: var(--font-body); }
+.lab-log { white-space: pre-wrap; word-break: break-all; font-size: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); margin: 0; }
+.lab h2 { font-size: 14px; color: var(--muted); margin: var(--space-3) 0 0; }
+.lab-progress { margin: 0; font-size: 12px; }

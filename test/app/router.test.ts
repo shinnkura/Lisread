@@ -8,5 +8,7 @@ describe('router', () => {
     expect(parseHash('#/nope')).toEqual({ name: 'library' });
     expect(toHash({ name: 'reader', bookId: 'x' })).toBe('#/book/x');
     expect(toHash({ name: 'library' })).toBe('#/');
+    expect(parseHash('#/tts-lab')).toEqual({ name: 'ttsLab' });
+    expect(toHash({ name: 'ttsLab' })).toBe('#/tts-lab');
   });
 });

@@ -7,3 +7,4 @@
 .book-meta { color: var(--muted); font-size: 13px; }
 .empty { color: var(--muted); text-align: center; padding: var(--space-6); }
 .toast { position: fixed; left: var(--space-4); right: var(--space-4); bottom: calc(var(--space-5) + env(safe-area-inset-bottom)); background: var(--fg); color: var(--bg); padding: var(--space-3) var(--space-4); border-radius: var(--radius); z-index: 50; }
+.lab-link { color: var(--muted); text-decoration: underline; font-size: 13px; }
