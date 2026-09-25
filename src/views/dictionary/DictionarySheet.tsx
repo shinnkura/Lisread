@@ -10,11 +10,17 @@ export function DictionarySheet({ state, onClose, onToggleSave }: { state: Dicti
         <div className="sheet-handle" />
         <div className="sheet-head">
           <div><span className="sheet-word">{state.word}</span>{state.lemma !== state.word && <span className="sheet-lemma"> → {state.lemma}</span>}</div>
-          <button className={`btn ${state.saved ? '' : 'btn-primary'}`} onClick={onToggleSave} disabled={!state.lemma}>{state.saved ? '削除' : '保存'}</button>
+          <button className={`btn ${state.saved ? '' : 'btn-primary'}`} onClick={onToggleSave} disabled={!state.lemma || state.jaLoading}>{state.saved ? '削除' : '保存'}</button>
         </div>
         <section className="sheet-section">
           <h3>英和</h3>
-          {state.meaningJa === null ? <p className="muted">見つかりませんでした</p> : state.meaningJa.split(' / ').map((m, i) => <p key={i}>{m}</p>)}
+          {state.jaLoading ? (
+            <p className="muted">読み込み中…</p>
+          ) : state.meaningJa === null ? (
+            <p className="muted">見つかりませんでした</p>
+          ) : (
+            state.meaningJa.split(' / ').map((m, i) => <p key={i}>{m}</p>)
+          )}
         </section>
         {online && (state.enLoading || state.en) && (
           <section className="sheet-section">

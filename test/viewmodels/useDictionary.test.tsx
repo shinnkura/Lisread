@@ -24,7 +24,9 @@ describe('useDictionary', () => {
     const d = deps('idle');
     const { result } = renderHook(() => useDictionary(d, { bookId: 'b', chapterIndex: 2 }));
     act(() => result.current.openFor(tap));
+    expect(result.current.state.jaLoading).toBe(true);
     await waitFor(() => expect(result.current.state.meaningJa).toBe('つまずく'));
+    expect(result.current.state.jaLoading).toBe(false);
     expect(result.current.state.lemma).toBe('stumble');
     expect(result.current.state.saved).toBe(false);
     await act(() => result.current.toggleSave());

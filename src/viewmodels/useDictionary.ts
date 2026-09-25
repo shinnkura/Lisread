@@ -6,8 +6,8 @@ import type { VocabularyRepositoryPort } from '../services/storage/VocabularyRep
 import type { WordTap } from '../views/reader/ChapterContent';
 import type { PlaybackStatus } from './usePlayback';
 
-export interface DictionaryState { open: boolean; word: string; lemma: string; meaningJa: string | null; en: EnEntry | null; enLoading: boolean; saved: boolean; sentence: string; sid: number }
-const closed: DictionaryState = { open: false, word: '', lemma: '', meaningJa: null, en: null, enLoading: false, saved: false, sentence: '', sid: 0 };
+export interface DictionaryState { open: boolean; word: string; lemma: string; meaningJa: string | null; jaLoading: boolean; en: EnEntry | null; enLoading: boolean; saved: boolean; sentence: string; sid: number }
+const closed: DictionaryState = { open: false, word: '', lemma: '', meaningJa: null, jaLoading: false, en: null, enLoading: false, saved: false, sentence: '', sid: 0 };
 
 interface Deps { jaDict: JaDictionary; enDict: EnDictionaryPort; vocabulary: VocabularyRepositoryPort; playback: { status: PlaybackStatus; pause(): void; play(): void } }
 
@@ -29,13 +29,13 @@ export function useDictionary(deps: Deps, ctx: { bookId: string; chapterIndex: n
     if (d.playback.status === 'playing') { d.playback.pause(); resumeOnClose.current = true; } else resumeOnClose.current = false;
     abort.current?.abort();
     const my = ++seq.current;
-    setState({ ...closed, open: true, word: tap.word, lemma: tap.word, sentence: tap.sentence, sid: tap.sid, enLoading: true });
+    setState({ ...closed, open: true, word: tap.word, lemma: tap.word, sentence: tap.sentence, sid: tap.sid, jaLoading: true, enLoading: true });
     void (async () => {
       const r = await lookupWord(tap.word, d.jaDict);
       if (my !== seq.current) return;
       const saved = !!(await d.vocabulary.findByLemma(r.lemma));
       if (my !== seq.current) return;
-      setState((s) => ({ ...s, word: r.word, lemma: r.lemma, meaningJa: r.meaningJa, saved }));
+      setState((s) => ({ ...s, word: r.word, lemma: r.lemma, meaningJa: r.meaningJa, jaLoading: false, saved }));
       const ac = new AbortController(); abort.current = ac;
       const en = await d.enDict.lookup(r.lemma, ac.signal);
       if (my !== seq.current) return;
