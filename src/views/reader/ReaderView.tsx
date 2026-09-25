@@ -10,16 +10,26 @@ export function ReaderView({ bookId }: { bookId: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLElement | null>(null);
   const restoreRef = useRef<number | null>(reader.initialProgress);
+  // アンマウント時の effect クリーンアップは DOM が既に外れた後に走るため scroller.current が null になる。
+  // その場合に備えて直近のスクロール比率をここに保持し、DOM 消失後の保存では 0 で上書きしないようにする。
+  const progressRef = useRef(0);
   const [, setTick] = useState(0);
 
   const currentProgress = () => {
-    const el = scroller.current; if (!el) return 0;
+    const el = scroller.current;
+    if (!el) return progressRef.current;
     const max = el.scrollHeight - el.clientHeight;
-    return max > 0 ? el.scrollTop / max : 0;
+    const p = max > 0 ? el.scrollTop / max : 0;
+    progressRef.current = p;
+    return p;
   };
   // reader は毎レンダー新しいオブジェクトなので、ref 経由で最新の saveProgress を呼ぶ（effect の再購読と保存の連発を防ぐ）
   const saveRef = useRef(reader.saveProgress); saveRef.current = reader.saveProgress;
-  const save = useCallback(() => { void saveRef.current(currentProgress()); }, []);
+  const save = useCallback(() => {
+    const p = scroller.current ? currentProgress() : progressRef.current;
+    void saveRef.current(p);
+  }, []);
+  const onScroll = useCallback(() => { currentProgress(); }, []);
 
   useEffect(() => {
     const onHide = () => { if (document.visibilityState === 'hidden') save(); };
@@ -36,6 +46,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
     if (el) {
       const p = restoreRef.current ?? 0; restoreRef.current = null;
       el.scrollTop = p * (el.scrollHeight - el.clientHeight);
+      progressRef.current = p;
     }
     reader.notifyReady(count);
     setTick((t) => t + 1);
@@ -58,7 +69,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
         <div className="reader-title"><div>{book?.title ?? ''}</div><div className="muted">{reader.loaded?.chapter.title ?? `第 ${reader.chapterIndex + 1} 章`}</div></div>
         <span className="icon-btn" />
       </header>
-      <div ref={scroller} className="reader-scroll">
+      <div ref={scroller} className="reader-scroll" onScroll={onScroll}>
         {reader.error && <p className="empty">{reader.error}</p>}
         {reader.loaded && (<>{nav}<ChapterContent loaded={reader.loaded} onReady={onReady} onWordTap={onWordTap} />{nav}</>)}
       </div>
