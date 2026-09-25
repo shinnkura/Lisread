@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Book } from '../models/types';
 import type { BookRepositoryPort } from '../services/storage/BookRepository';
 import { EpubParseError, type EpubParserPort } from '../services/epub/EpubParser';
+import { toBlob } from '../services/storage/blob';
 
 export function progressPercent(book: Book): number {
   if (book.chapterCount <= 0) return 0;
@@ -9,9 +10,7 @@ export function progressPercent(book: Book): number {
 }
 
 export function coverUrl(book: Book): string | null {
-  // @types/node の Uint8Array<ArrayBufferLike> 定義と lib.dom の BlobPart（Uint8Array<ArrayBuffer> 前提）が
-  // 噛み合わないため、bytes を ArrayBuffer とみなしてキャストする（実行時の値は変わらない）。
-  return book.cover ? URL.createObjectURL(new Blob([book.cover.bytes as Uint8Array<ArrayBuffer>], { type: book.cover.mime })) : null;
+  return book.cover ? URL.createObjectURL(toBlob(book.cover)) : null;
 }
 
 /** jsdom など Blob.arrayBuffer がない環境でも動くように FileReader にフォールバックする */

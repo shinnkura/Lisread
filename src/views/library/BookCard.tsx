@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Book } from '../../models/types';
 import { coverUrl, progressPercent } from '../../viewmodels/useLibrary';
 
 export function BookCard({ book, onOpen, onLongPress }: { book: Book; onOpen: () => void; onLongPress: () => void }) {
-  const url = useMemo(() => coverUrl(book), [book]);
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const u = coverUrl(book);
+    setUrl(u);
+    return () => { if (u) URL.revokeObjectURL(u); };
+  }, [book]);
   const timer = useRef<number | null>(null);
   const fired = useRef(false);
   const start = () => { fired.current = false; timer.current = window.setTimeout(() => { fired.current = true; onLongPress(); }, 500); };
