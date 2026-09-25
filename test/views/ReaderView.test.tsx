@@ -22,9 +22,15 @@ vi.mock('../../src/app/services', () => ({
       getAsset: getAssetMock,
       updateProgress,
     },
-    vocabulary: {},
+    vocabulary: {
+      savedLemmas: async () => new Set(),
+      findByLemma: vi.fn(async () => undefined),
+      save: vi.fn(async (i: unknown) => ({ ...(i as object), id: 'id1', createdAt: 1 })),
+      removeByLemma: vi.fn(async () => {}),
+    },
     epub: {},
-    jaDict: {},
+    jaDict: { lookup: async () => null },
+    enDict: { lookup: async () => null },
     speech: { isSupported: () => false, getVoices: async () => [], speak: async () => 'ended', cancel: () => {} },
   },
 }));

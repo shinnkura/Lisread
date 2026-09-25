@@ -3,9 +3,11 @@ import { services } from '../../app/services';
 import { navigate } from '../../app/router';
 import { useReader } from '../../viewmodels/useReader';
 import { usePlayback } from '../../viewmodels/usePlayback';
-import { getSentenceElements, getSentenceText } from '../../services/reader/segmenter';
-import { ChapterContent, type WordTap } from './ChapterContent';
+import { useDictionary } from '../../viewmodels/useDictionary';
+import { applySavedMarkers, getSentenceElements, getSentenceText } from '../../services/reader/segmenter';
+import { ChapterContent } from './ChapterContent';
 import { PlaybackBar } from './PlaybackBar';
+import { DictionarySheet } from '../dictionary/DictionarySheet';
 import './reader.css';
 
 export function ReaderView({ bookId }: { bookId: string }) {
@@ -19,7 +21,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
   // アンマウント時の effect クリーンアップは DOM が既に外れた後に走るため scroller.current が null になる。
   // その場合に備えて直近のスクロール比率をここに保持し、DOM 消失後の保存では 0 で上書きしないようにする。
   const progressRef = useRef(0);
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
 
   const currentProgress = () => {
     const el = scroller.current;
@@ -61,6 +63,16 @@ export function ReaderView({ bookId }: { bookId: string }) {
   });
   const playbackRef = useRef(playback); playbackRef.current = playback;
 
+  const dictionary = useDictionary(
+    { jaDict: services.jaDict, enDict: services.enDict, vocabulary: services.vocabulary, playback: { status: playback.status, pause: playback.pause, play: playback.play } },
+    { bookId, chapterIndex: reader.chapterIndex },
+  );
+
+  // 保存済み単語（活用形含む）に常時マーカーを付ける。保存状態の変化と、章切り替え直後の再描画（tick）で再適用する
+  useEffect(() => {
+    if (rootRef.current) applySavedMarkers(rootRef.current, dictionary.isSaved);
+  }, [dictionary.isSaved, tick]);
+
   useEffect(() => {
     const onHide = () => { if (document.visibilityState === 'hidden') save(); };
     document.addEventListener('visibilitychange', onHide);
@@ -89,7 +101,6 @@ export function ReaderView({ bookId }: { bookId: string }) {
     setTick((t) => t + 1);
   };
 
-  const onWordTap = (_t: WordTap) => { /* Task 10 で辞書を開く */ };
   const go = (delta: number) => { playback.stop(); save(); void reader.goToChapter(reader.chapterIndex + delta); };
   const book = reader.book;
   const nav = (
@@ -108,7 +119,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
       </header>
       <div ref={scroller} className="reader-scroll" onScroll={onScroll}>
         {reader.error && <p className="empty">{reader.error}</p>}
-        {reader.loaded && (<>{nav}<ChapterContent loaded={reader.loaded} onReady={onReady} onWordTap={onWordTap} />{nav}</>)}
+        {reader.loaded && (<>{nav}<ChapterContent loaded={reader.loaded} onReady={onReady} onWordTap={dictionary.openFor} />{nav}</>)}
       </div>
       <PlaybackBar
         status={playback.status}
@@ -122,6 +133,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
         onRate={playback.setRate}
         onVoice={playback.setVoice}
       />
+      <DictionarySheet state={dictionary.state} onClose={dictionary.close} onToggleSave={() => void dictionary.toggleSave()} />
     </div>
   );
 }
