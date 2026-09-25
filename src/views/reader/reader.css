@@ -11,3 +11,9 @@
 .chapter-host .w.saved { background: var(--marker-bg); box-shadow: inset 0 -2px 0 var(--marker-line); }
 .chapter-host .s.speaking { background: var(--speaking-bg); box-shadow: 0 0 0 3px var(--speaking-bg); border-radius: 3px; }
 .empty { color: var(--muted); text-align: center; padding: var(--space-6); }
+.playbar { flex: none; border-top: 1px solid var(--border); background: var(--surface); padding: var(--space-2) var(--space-4) calc(var(--space-2) + env(safe-area-inset-bottom)); }
+.playbar-main { display: flex; justify-content: center; gap: var(--space-5); }
+.playbar-main .play { background: var(--accent); color: var(--accent-fg); width: 56px; height: 56px; font-size: 20px; }
+.playbar-sub { display: flex; align-items: center; justify-content: center; gap: var(--space-2); margin-top: var(--space-1); }
+.playbar-sub .rate { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
+.playbar-sub select { max-width: 45%; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px; }

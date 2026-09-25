@@ -25,6 +25,7 @@ vi.mock('../../src/app/services', () => ({
     vocabulary: {},
     epub: {},
     jaDict: {},
+    speech: { isSupported: () => false, getVoices: async () => [], speak: async () => 'ended', cancel: () => {} },
   },
 }));
 

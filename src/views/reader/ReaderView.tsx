@@ -2,11 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { services } from '../../app/services';
 import { navigate } from '../../app/router';
 import { useReader } from '../../viewmodels/useReader';
+import { usePlayback } from '../../viewmodels/usePlayback';
+import { getSentenceElements, getSentenceText } from '../../services/reader/segmenter';
 import { ChapterContent, type WordTap } from './ChapterContent';
+import { PlaybackBar } from './PlaybackBar';
 import './reader.css';
 
 export function ReaderView({ bookId }: { bookId: string }) {
   const reader = useReader(services, bookId);
+  // goToChapter を呼ぶクロージャ（onChapterEnd）が古い chapterIndex を掴んだままにならないよう、毎レンダー最新値を控える
+  const chapterIndexRef = useRef(reader.chapterIndex);
+  chapterIndexRef.current = reader.chapterIndex;
   const scroller = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLElement | null>(null);
   const restoreRef = useRef<number | null>(reader.initialProgress);
@@ -31,12 +37,43 @@ export function ReaderView({ bookId }: { bookId: string }) {
   }, []);
   const onScroll = useCallback(() => { currentProgress(); }, []);
 
+  // 読んでいる文をハイライトし、scroller の表示範囲外なら中央へスクロールする
+  const highlight = (sid: number | null) => {
+    const root = rootRef.current;
+    if (!root) return;
+    root.querySelectorAll('.s.speaking').forEach((el) => el.classList.remove('speaking'));
+    if (sid === null) return;
+    const els = getSentenceElements(root, sid);
+    els.forEach((el) => el.classList.add('speaking'));
+    const first = els[0];
+    const scrollerEl = scroller.current;
+    if (!first || !scrollerEl) return;
+    const sRect = scrollerEl.getBoundingClientRect();
+    const fRect = first.getBoundingClientRect();
+    if (fRect.top < sRect.top || fRect.bottom > sRect.bottom) first.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  };
+
+  const playback = usePlayback({
+    speech: services.speech,
+    getSentenceText: (s) => (rootRef.current ? getSentenceText(rootRef.current, s) : null),
+    onSentenceChange: highlight,
+    onChapterEnd: () => reader.goToChapter(chapterIndexRef.current + 1),
+  });
+  const playbackRef = useRef(playback); playbackRef.current = playback;
+
   useEffect(() => {
     const onHide = () => { if (document.visibilityState === 'hidden') save(); };
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', save);
     return () => { document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', save); save(); };
   }, [save]);
+
+  // 画面が非表示になったら読み上げ中のみ一時停止する（保存処理とは独立させる）
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === 'hidden' && playbackRef.current.status === 'playing') playbackRef.current.pause(); };
+    document.addEventListener('visibilitychange', onHide);
+    return () => document.removeEventListener('visibilitychange', onHide);
+  }, []);
 
   useEffect(() => { restoreRef.current = reader.initialProgress; }, [reader.initialProgress]);
 
@@ -53,7 +90,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
   };
 
   const onWordTap = (_t: WordTap) => { /* Task 10 で辞書を開く */ };
-  const go = (delta: number) => { save(); void reader.goToChapter(reader.chapterIndex + delta); };
+  const go = (delta: number) => { playback.stop(); save(); void reader.goToChapter(reader.chapterIndex + delta); };
   const book = reader.book;
   const nav = (
     <div className="chapter-nav">
@@ -65,7 +102,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
   return (
     <div className="screen reader">
       <header className="topbar reader-top">
-        <button className="icon-btn" aria-label="本棚へ戻る" onClick={() => { save(); navigate({ name: 'library' }); }}>‹</button>
+        <button className="icon-btn" aria-label="本棚へ戻る" onClick={() => { playback.stop(); save(); navigate({ name: 'library' }); }}>‹</button>
         <div className="reader-title"><div>{book?.title ?? ''}</div><div className="muted">{reader.loaded?.chapter.title ?? `第 ${reader.chapterIndex + 1} 章`}</div></div>
         <span className="icon-btn" />
       </header>
@@ -73,6 +110,18 @@ export function ReaderView({ bookId }: { bookId: string }) {
         {reader.error && <p className="empty">{reader.error}</p>}
         {reader.loaded && (<>{nav}<ChapterContent loaded={reader.loaded} onReady={onReady} onWordTap={onWordTap} />{nav}</>)}
       </div>
+      <PlaybackBar
+        status={playback.status}
+        rate={playback.rate}
+        voiceId={playback.voiceId}
+        voices={playback.voices}
+        unavailable={playback.unavailable}
+        onToggle={playback.toggle}
+        onNext={playback.next}
+        onPrev={playback.prev}
+        onRate={playback.setRate}
+        onVoice={playback.setVoice}
+      />
     </div>
   );
 }
