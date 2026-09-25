@@ -22,10 +22,16 @@ export class EjDictionary implements JaDictionary {
     let p = this.shards.get(key);
     if (!p) {
       p = this.fetchFn(`${this.baseUrl}/${key}.json`)
-        .then((r) => (r.ok ? (r.json() as Promise<Shard>) : {}))
-        .catch(() => ({}) as Shard);
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json() as Promise<Shard>;
+        });
       this.shards.set(key, p);
     }
-    return p;
+    // キャッシュから取得したプロミスに対して、エラー時のみキャッシュから削除
+    return p.catch(() => {
+      this.shards.delete(key);
+      return {};
+    });
   }
 }
