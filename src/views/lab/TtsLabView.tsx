@@ -10,6 +10,17 @@ type Device = 'wasm' | 'webgpu';
 const VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'am_adam', 'am_michael', 'bf_emma', 'bm_george'] as const;
 const DEFAULT_TEXT = 'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.';
 
+/** WebAssembly.Memory をどこまで確保できるかを二分探索で調べる（iOS の上限を知るための診断） */
+function probeWasmMemory(): string {
+  const tryAlloc = (pages: number) => { try { new WebAssembly.Memory({ initial: 1, maximum: pages }); return true; } catch { return false; } };
+  const tryInitial = (pages: number) => { try { new WebAssembly.Memory({ initial: pages }); return true; } catch { return false; } };
+  let lo = 1, hi = 65536;
+  while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (tryAlloc(mid)) lo = mid; else hi = mid - 1; }
+  let ilo = 1, ihi = 32768;
+  while (ilo < ihi) { const mid = Math.ceil((ilo + ihi) / 2); if (tryInitial(mid)) ilo = mid; else ihi = mid - 1; }
+  return `maximum ${Math.round(lo / 16)}MB まで / initial 実確保 ${Math.round(ilo / 16)}MB まで`;
+}
+
 interface Kokoro { generate(text: string, opts: { voice: string; speed: number }): Promise<{ audio: Float32Array; sampling_rate: number }> }
 
 export function TtsLabView() {
@@ -48,6 +59,11 @@ export function TtsLabView() {
     try {
       add(`モデル読み込み開始 dtype=${dtype} device=${device}`);
       const { KokoroTTS } = await import('kokoro-js');
+      const { env } = await import('@huggingface/transformers');
+      // iOS Safari 対策: SharedArrayBuffer が使えないため 1 スレッド・プロキシ無しで初期化する
+      const wasm = env.backends.onnx.wasm as { numThreads?: number; proxy?: boolean } | undefined;
+      if (wasm) { wasm.numThreads = 1; wasm.proxy = false; }
+      add(`wasm 設定: threads=1 proxy=false / メモリ上限プローブ: ${probeWasmMemory()}`);
       const model = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
         dtype, device,
         progress_callback: (p: { status: string; file?: string; progress?: number }) => {
@@ -98,6 +114,7 @@ export function TtsLabView() {
       </header>
       <div className="lab-body">
         <p className="muted">ブラウザ内で動くニューラル音声 Kokoro を試します。初回はモデル（q8 で約 90MB）を取得します。Wi-Fi 推奨。</p>
+        <p className="muted">端末: {typeof navigator !== 'undefined' ? navigator.userAgent : ''} / WebGPU: {hasWebGPU ? 'あり' : 'なし'}</p>
         <div className="lab-row">
           <label>精度 <select value={dtype} onChange={(e) => setDtype(e.target.value as Dtype)} disabled={busy}>
             <option value="q8">q8（軽い・推奨）</option><option value="q4">q4（最軽量）</option><option value="fp32">fp32（重い・高品質）</option>
