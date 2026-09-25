@@ -8,6 +8,7 @@ import './lab.css';
 type Dtype = 'q8' | 'fp32' | 'q4';
 type Device = 'wasm' | 'webgpu';
 const VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'am_adam', 'am_michael', 'bf_emma', 'bm_george'] as const;
+const ORT_WASM_CDN = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0-dev.20250409-89f8206ba4/dist/';
 const DEFAULT_TEXT = 'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.';
 
 /** WebAssembly.Memory をどこまで確保できるかを二分探索で調べる（iOS の上限を知るための診断） */
@@ -58,6 +59,9 @@ export function TtsLabView() {
     const t0 = performance.now();
     try {
       add(`モデル読み込み開始 dtype=${dtype} device=${device}`);
+      // iPhone Safari は GPU 対応版（21MB）の wasm をコンパイルできないため、
+      // 先に軽量な wasm 専用ビルドを初期化しておく。transformers.js は初期化済みのランタイムを再利用する
+      await initOrtWasmOnly();
       const { KokoroTTS } = await import('kokoro-js');
       const { env } = await import('@huggingface/transformers');
       // iOS Safari 対策: SharedArrayBuffer が使えないため 1 スレッド・プロキシ無しで初期化する
@@ -83,15 +87,20 @@ export function TtsLabView() {
 
   // 診断: 軽量な wasm 専用ビルド（約 11MB、WebGPU 無し）の ONNX Runtime だけを初期化できるか確かめる。
   // 「no available backend」で失敗すれば wasm の初期化自体が無理、モデル解析エラーで失敗すれば初期化は通っている。
+  const initOrtWasmOnly = async () => {
+    const ort = await import('onnxruntime-web/wasm');
+    ort.env.wasm.numThreads = 1;
+    ort.env.wasm.proxy = false;
+    // wasm 本体（約 11MB）はバンドルに含めず CDN から取得する
+    ort.env.wasm.wasmPaths = ORT_WASM_CDN;
+    return ort;
+  };
+
   const testOrtWasmOnly = async () => {
     setBusy(true);
     const t0 = performance.now();
     try {
-      const ort = await import('onnxruntime-web/wasm');
-      ort.env.wasm.numThreads = 1;
-      ort.env.wasm.proxy = false;
-      // wasm 本体（約 11MB）はバンドルに含めず CDN から取得する
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0-dev.20250409-89f8206ba4/dist/';
+      const ort = await initOrtWasmOnly();
       add('ORT wasm 専用ビルドの初期化を開始（wasm は CDN から取得）');
       await ort.InferenceSession.create(new Uint8Array([0, 1, 2, 3]), { executionProviders: ['wasm'] });
       add('（想定外）ダミーモデルで成功');
