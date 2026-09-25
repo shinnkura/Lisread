@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { usePlayback } from '../../src/viewmodels/usePlayback';
 import type { SpeechService, SpeakResult } from '../../src/services/speech/SpeechService';
@@ -17,6 +17,8 @@ function fakeSpeech(auto = true) {
 }
 
 describe('usePlayback', () => {
+  beforeEach(() => localStorage.clear());
+
   it('文を順に読み、章末で次章に進み、最終章末で idle になる', async () => {
     let chapter = ['a', 'b'];
     const speech = fakeSpeech();
@@ -41,6 +43,17 @@ describe('usePlayback', () => {
     expect(result.current.sid).toBe(1);
     act(() => result.current.play());
     expect(speech.spoken).toEqual(['a', 'b', 'b']);
+  });
+  it('再生中に play(sid) すると進行中の発話を cancel してから新しい文だけ読む', async () => {
+    const speech = fakeSpeech(false);
+    const { result } = renderHook(() => usePlayback({ speech, getSentenceText: (i) => ['a', 'b', 'c'][i] ?? null, onSentenceChange: () => {}, onChapterEnd: async () => false }));
+    act(() => result.current.play());
+    expect(speech.spoken).toEqual(['a']);
+    act(() => result.current.play(2));
+    expect(speech.cancel).toHaveBeenCalledTimes(1);
+    expect(speech.spoken).toEqual(['a', 'c']);
+    expect(result.current.status).toBe('playing');
+    expect(result.current.sid).toBe(2);
   });
   it('next / prev は再生中なら読み直し、停止中なら位置だけ動かす', async () => {
     const speech = fakeSpeech(false);

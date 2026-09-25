@@ -24,6 +24,7 @@ export function usePlayback(deps: PlaybackDeps) {
   const sidRef = useRef(0);
   const rateRef = useRef(rate); rateRef.current = rate;
   const voiceRef = useRef(voiceId); voiceRef.current = voiceId;
+  const statusRef = useRef(status); statusRef.current = status;
 
   useEffect(() => {
     const d = depsRef.current;
@@ -34,17 +35,20 @@ export function usePlayback(deps: PlaybackDeps) {
   const setCurrent = (s: number) => { sidRef.current = s; setSid(s); };
 
   const run = (from: number) => {
+    // 再生中に別の文へ飛ぶ場合（play(n) の呼び直しなど）は、キューに残る古い発話をここで確実に止める
+    if (statusRef.current === 'playing') depsRef.current.speech.cancel();
     const my = ++runId.current;
     setStatus('playing');
     const loop = async (s: number): Promise<void> => {
-      const d = depsRef.current;
+      let d = depsRef.current;
       let text = d.getSentenceText(s);
       if (text === null) {
         const more = await d.onChapterEnd();
         if (my !== runId.current) return;
+        d = depsRef.current; // await の間に deps が更新されている可能性があるので取り直す
         if (!more) { setStatus('idle'); setCurrent(0); d.onSentenceChange(null); return; }
-        s = 0; text = depsRef.current.getSentenceText(0);
-        if (text === null) { setStatus('idle'); depsRef.current.onSentenceChange(null); return; }
+        s = 0; text = d.getSentenceText(0);
+        if (text === null) { setStatus('idle'); d.onSentenceChange(null); return; }
       }
       setCurrent(s); d.onSentenceChange(s);
       const r = await d.speech.speak(text, { voiceId: voiceRef.current, rate: rateRef.current });
