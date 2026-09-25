@@ -81,6 +81,27 @@ export function TtsLabView() {
     }
   };
 
+  // 診断: 軽量な wasm 専用ビルド（約 11MB、WebGPU 無し）の ONNX Runtime だけを初期化できるか確かめる。
+  // 「no available backend」で失敗すれば wasm の初期化自体が無理、モデル解析エラーで失敗すれば初期化は通っている。
+  const testOrtWasmOnly = async () => {
+    setBusy(true);
+    const t0 = performance.now();
+    try {
+      const ort = await import('onnxruntime-web/wasm');
+      ort.env.wasm.numThreads = 1;
+      ort.env.wasm.proxy = false;
+      add('ORT wasm 専用ビルドの初期化を開始');
+      await ort.InferenceSession.create(new Uint8Array([0, 1, 2, 3]), { executionProviders: ['wasm'] });
+      add('（想定外）ダミーモデルで成功');
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      const initOk = !/no available backend|Out of memory/i.test(msg);
+      add(`${initOk ? '初期化は成功（モデル解析で失敗、これは想定どおり）' : '初期化に失敗'}: ${msg.slice(0, 200)} / ${((performance.now() - t0) / 1000).toFixed(1)} 秒`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const generate = async () => {
     unlockAudio();
     if (!tts.current) { add('先にモデルを読み込んでください'); return; }
@@ -123,6 +144,7 @@ export function TtsLabView() {
             <option value="wasm">CPU (wasm)</option>{hasWebGPU && <option value="webgpu">GPU (WebGPU)</option>}
           </select></label>
         </div>
+        <button className="btn" onClick={() => void testOrtWasmOnly()} disabled={busy}>0. 実行エンジン単体テスト（軽量 11MB 版）</button>
         <button className="btn btn-primary" onClick={() => void loadModel()} disabled={busy}>1. モデルを読み込む</button>
         {progress && <p className="muted lab-progress">{progress}</p>}
         <label className="lab-block">声 <select value={voice} onChange={(e) => setVoice(e.target.value)} disabled={busy}>
