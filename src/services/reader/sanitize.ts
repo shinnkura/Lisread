@@ -34,3 +34,14 @@ export function sanitizeChapter(html: string, chapterHref: string, resolve: Asse
   });
   return document.importNode(root, true) as HTMLElement;
 }
+
+export function collectAssetRefs(html: string, chapterHref: string): string[] {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  const base = dirname(chapterHref);
+  const out: string[] = [];
+  const push = (raw: string | null) => { if (!raw || /^(data|blob|https?):/i.test(raw)) return; const p = resolvePath(base, raw); if (!out.includes(p)) out.push(p); };
+  doc.querySelectorAll('img[src], source[src]').forEach((e) => push(e.getAttribute('src')));
+  doc.querySelectorAll('link[href]').forEach((e) => push(e.getAttribute('href')));
+  doc.querySelectorAll('image').forEach((e) => push(e.getAttribute('href') ?? e.getAttributeNS(XLINK, 'href') ?? e.getAttribute('xlink:href')));
+  return out;
+}
