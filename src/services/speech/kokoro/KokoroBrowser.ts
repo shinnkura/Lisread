@@ -45,25 +45,41 @@ export async function fetchCached(url: string, onProgress?: (p: KokoroProgress) 
   return out.buffer;
 }
 
-export async function initOrtWasm(): Promise<OrtLike> {
-  const ort = await import('onnxruntime-web/wasm');
-  ort.env.wasm.numThreads = 1;
-  ort.env.wasm.proxy = false;
-  ort.env.wasm.wasmPaths = ORT_WASM_CDN;
-  return ort as unknown as OrtLike;
+let ortPromise: Promise<OrtLike> | null = null;
+
+/**
+ * ONNX Runtime（wasm 専用ビルド）を初期化する。iPhone Safari では、モデルなど大きなデータを
+ * メモリに載せた後だと wasm のコンパイルが "Out of memory" で失敗するため、
+ * 他の何よりも先に、ダミーのセッション作成でランタイムを実際に起動しておく。
+ */
+export function initOrtWasm(): Promise<OrtLike> {
+  ortPromise ??= (async () => {
+    const ort = await import('onnxruntime-web/wasm');
+    ort.env.wasm.numThreads = 1;
+    ort.env.wasm.proxy = false;
+    ort.env.wasm.wasmPaths = ORT_WASM_CDN;
+    try {
+      await ort.InferenceSession.create(new Uint8Array([0, 1, 2, 3]), { executionProviders: ['wasm'] });
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      // モデル解析エラーは想定どおり（ランタイムは起動済み）。それ以外は起動失敗として投げ直す
+      if (/no available backend|Out of memory/i.test(msg)) { ortPromise = null; throw e; }
+    }
+    return ort as unknown as OrtLike;
+  })();
+  return ortPromise;
 }
 
 export async function loadKokoro(opts: { modelFile?: KokoroModelFile; onProgress?: (p: KokoroProgress) => void; hfBase?: string } = {}): Promise<LoadedKokoro> {
   const base = opts.hfBase ?? KOKORO_HF_BASE;
   const modelFile = opts.modelFile ?? 'model_quantized';
-  const [ort, { phonemize }, modelBuf, tokenizerBuf] = await Promise.all([
-    initOrtWasm(),
-    import('phonemizer'),
-    fetchCached(`${base}/onnx/${modelFile}.onnx`, opts.onProgress),
-    fetchCached(`${base}/tokenizer.json`, opts.onProgress),
-  ]);
-  const vocab = vocabFromTokenizerJson(JSON.parse(new TextDecoder().decode(tokenizerBuf)));
+  // 順番が重要: ランタイム起動 → 音素化ライブラリ → モデル。同時に走らせるとメモリのピークが上がり iPhone で失敗する
+  const ort = await initOrtWasm();
+  const { phonemize } = await import('phonemizer');
+  const vocab = vocabFromTokenizerJson(JSON.parse(new TextDecoder().decode(await fetchCached(`${base}/tokenizer.json`, opts.onProgress))));
+  let modelBuf: ArrayBuffer | null = await fetchCached(`${base}/onnx/${modelFile}.onnx`, opts.onProgress);
   const engine = await KokoroEngine.create(ort, new Uint8Array(modelBuf), vocab);
+  modelBuf = null; // セッション作成後は JS 側のコピーを手放してメモリを戻す
   const voices = new Map<string, Float32Array>();
   return {
     engine,

@@ -53,7 +53,7 @@ export function TtsLabView() {
     setBusy(true);
     const t0 = performance.now();
     try {
-      add(`モデル読み込み開始 ${modelFile}（wasm 専用ランタイム・1 スレッド）`);
+      add(`モデル読み込み開始 ${modelFile}（先にランタイム起動 → モデル取得の順）`);
       kokoro.current = await loadKokoro({
         modelFile,
         onProgress: (p) => setProgress(p.total ? `${p.file} ${Math.round((p.loaded / p.total) * 100)}%` : `${p.file} ${Math.round(p.loaded / 1024 / 1024)}MB`),
