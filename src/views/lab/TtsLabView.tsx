@@ -90,7 +90,9 @@ export function TtsLabView() {
       const ort = await import('onnxruntime-web/wasm');
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.proxy = false;
-      add('ORT wasm 専用ビルドの初期化を開始');
+      // wasm 本体（約 11MB）はバンドルに含めず CDN から取得する
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0-dev.20250409-89f8206ba4/dist/';
+      add('ORT wasm 専用ビルドの初期化を開始（wasm は CDN から取得）');
       await ort.InferenceSession.create(new Uint8Array([0, 1, 2, 3]), { executionProviders: ['wasm'] });
       add('（想定外）ダミーモデルで成功');
     } catch (e) {
