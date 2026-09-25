@@ -9,7 +9,7 @@ type Dtype = 'q8' | 'fp32' | 'q4';
 type Device = 'wasm' | 'webgpu';
 const VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'am_adam', 'am_michael', 'bf_emma', 'bm_george'] as const;
 const ORT_WASM_CDN = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0-dev.20250409-89f8206ba4/dist/';
-const DEFAULT_TEXT = 'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.';
+const DEFAULT_TEXT = 'Hello, how are you today?';
 
 /** WebAssembly.Memory をどこまで確保できるかを二分探索で調べる（iOS の上限を知るための診断） */
 function probeWasmMemory(): string {
@@ -33,6 +33,14 @@ export function TtsLabView() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
   const [sysVoices, setSysVoices] = useState<string[]>([]);
+  const [elapsed, setElapsed] = useState(0);
+  // 処理中は経過秒数を表示する（iPhone では生成に時間がかかり、固まったように見えるため）
+  useEffect(() => {
+    if (!busy) { setElapsed(0); return; }
+    const start = performance.now();
+    const id = setInterval(() => setElapsed(Math.floor((performance.now() - start) / 1000)), 500);
+    return () => clearInterval(id);
+  }, [busy]);
   const tts = useRef<Kokoro | null>(null);
   const ctx = useRef<AudioContext | null>(null);
   const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator;
@@ -119,6 +127,7 @@ export function TtsLabView() {
     setBusy(true);
     const t0 = performance.now();
     try {
+      add(`生成開始 voice=${voice} 文字数=${text.length}`);
       const out = await tts.current.generate(text, { voice, speed: 1 });
       const genSec = (performance.now() - t0) / 1000;
       const audioSec = out.audio.length / out.sampling_rate;
@@ -157,7 +166,7 @@ export function TtsLabView() {
         </div>
         <button className="btn" onClick={() => void testOrtWasmOnly()} disabled={busy}>0. 実行エンジン単体テスト（軽量 11MB 版）</button>
         <button className="btn btn-primary" onClick={() => void loadModel()} disabled={busy}>1. モデルを読み込む</button>
-        {progress && <p className="muted lab-progress">{progress}</p>}
+        {busy && <p className="muted lab-progress">処理中… {elapsed} 秒経過{progress ? ` / ${progress}` : ''}</p>}
         <label className="lab-block">声 <select value={voice} onChange={(e) => setVoice(e.target.value)} disabled={busy}>
           {VOICES.map((v) => <option key={v} value={v}>{v}</option>)}
         </select></label>
