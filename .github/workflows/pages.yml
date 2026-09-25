@@ -23,6 +23,8 @@ jobs:
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true  # Pages を未設定でも自動で有効化する
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
   deploy:
