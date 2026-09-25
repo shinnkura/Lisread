@@ -51,8 +51,9 @@ describe('usePlayback', () => {
     expect(speech.spoken).toEqual(['a']);
     act(() => result.current.play(2));
     expect(speech.cancel).toHaveBeenCalledTimes(1);
-    expect(speech.spoken).toEqual(['a', 'c']);
     expect(result.current.status).toBe('playing');
+    // iOS Safari では cancel() 直後の speak() が無視されることがあるため、新しい発話は 120ms 遅延される
+    await waitFor(() => expect(speech.spoken).toEqual(['a', 'c']));
     expect(result.current.sid).toBe(2);
   });
   it('next / prev は再生中なら読み直し、停止中なら位置だけ動かす', async () => {
@@ -63,9 +64,10 @@ describe('usePlayback', () => {
     expect(result.current.status).toBe('idle');
     act(() => result.current.play());
     act(() => result.current.next());
-    expect(speech.spoken).toEqual(['b', 'c']);
+    // iOS Safari では cancel() 直後の speak() が無視されることがあるため、新しい発話は 120ms 遅延される
+    await waitFor(() => expect(speech.spoken).toEqual(['b', 'c']));
     act(() => result.current.prev());
-    expect(speech.spoken).toEqual(['b', 'c', 'b']);
+    await waitFor(() => expect(speech.spoken).toEqual(['b', 'c', 'b']));
   });
   it('速度と音声は localStorage に残る', async () => {
     const speech = fakeSpeech(false);

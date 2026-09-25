@@ -60,6 +60,17 @@ describe('useReader', () => {
     expect(result.current.sentenceCount).toBe(4);
     expect(d.books.updateProgress).toHaveBeenCalledWith('b', 0, 0);
   });
+  it('章の読み込みに失敗してもエラー表示のまま別の章へ移動できる', async () => {
+    const d = deps();
+    d.books.getChapter = vi.fn(async (_: string, i: number) => (i === 1 ? undefined : chapters[0])) as unknown as typeof d.books.getChapter;
+    d.books.getBook = vi.fn(async () => ({ ...book, lastChapterIndex: 1 }));
+    const { result } = renderHook(() => useReader(d, 'b'));
+    await waitFor(() => expect(result.current.error).toBe('この章を表示できません'));
+    expect(result.current.loaded).toBeNull();
+    act(() => { void result.current.goToChapter(0); });
+    await waitFor(() => expect(result.current.loaded).not.toBeNull());
+    expect(result.current.error).toBeNull();
+  });
   it('saveProgress は現在の章で保存する', async () => {
     const d = deps();
     const { result } = renderHook(() => useReader(d, 'b'));

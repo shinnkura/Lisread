@@ -36,7 +36,8 @@ export function usePlayback(deps: PlaybackDeps) {
 
   const run = (from: number) => {
     // 再生中に別の文へ飛ぶ場合（play(n) の呼び直しなど）は、キューに残る古い発話をここで確実に止める
-    if (statusRef.current === 'playing') depsRef.current.speech.cancel();
+    const wasPlaying = statusRef.current === 'playing';
+    if (wasPlaying) depsRef.current.speech.cancel();
     const my = ++runId.current;
     setStatus('playing');
     const loop = async (s: number): Promise<void> => {
@@ -55,7 +56,16 @@ export function usePlayback(deps: PlaybackDeps) {
       if (my !== runId.current || r === 'cancelled') return;
       return loop(s + 1);
     };
-    void loop(from);
+    if (wasPlaying) {
+      // iOS Safari では cancel() の直後に speak() を呼ぶと新しい発話がブラウザ側で無視されることがあるため、
+      // 少し間を空けてから開始する。runId で guard しているので、待っている間にさらに新しい run() が
+      // 呼ばれればこの古い loop は実行されない。
+      setTimeout(() => { if (my === runId.current) void loop(from); }, 120);
+    } else {
+      // 何も再生していなかった場合は同期的に speak() まで進める（iOS の「ユーザー操作起点でないと
+      // 発話できない」制約に対応するため、初回 speak はイベントハンドラの呼び出しと同じ tick で行う）
+      void loop(from);
+    }
   };
 
   const stopSpeaking = () => { runId.current++; depsRef.current.speech.cancel(); };
@@ -66,7 +76,8 @@ export function usePlayback(deps: PlaybackDeps) {
   const toggle = useCallback(() => { if (status === 'playing') pause(); else play(); }, [status, pause, play]);
   const move = useCallback((delta: number) => {
     const target = Math.max(0, sidRef.current + delta);
-    if (status === 'playing') { stopSpeaking(); run(target); }
+    // cancel は run() 内で一度だけ行う（ここで stopSpeaking() を重ねて呼ばない）
+    if (status === 'playing') { run(target); }
     else { setCurrent(target); depsRef.current.onSentenceChange(target); }
   }, [status]);
   const next = useCallback(() => move(1), [move]);

@@ -44,7 +44,9 @@ export function useLibrary(deps: { books: BookRepositoryPort; epub: EpubParserPo
       await deps.books.addBook(parsed);
       await reload();
     } catch (e) {
-      setError(e instanceof EpubParseError ? e.message : `取り込みに失敗しました: ${(e as Error).message ?? e}`);
+      if (e instanceof EpubParseError) setError(e.message);
+      else if ((e as { name?: string })?.name === 'QuotaExceededError') setError('空き容量が足りません。不要な本を削除してください');
+      else setError(`取り込みに失敗しました: ${(e as Error).message ?? e}`);
     } finally {
       setImporting(false);
     }

@@ -21,6 +21,9 @@ export function ReaderView({ bookId }: { bookId: string }) {
   // アンマウント時の effect クリーンアップは DOM が既に外れた後に走るため scroller.current が null になる。
   // その場合に備えて直近のスクロール比率をここに保持し、DOM 消失後の保存では 0 で上書きしないようにする。
   const progressRef = useRef(0);
+  // StrictMode の二重マウントなどで onReady が一度も走らないままアンマウントされた場合、
+  // 章がまだ読み込めていないのに進捗 0 で上書き保存してしまうのを防ぐためのフラグ
+  const readyOnceRef = useRef(false);
   const [tick, setTick] = useState(0);
 
   const currentProgress = () => {
@@ -77,7 +80,11 @@ export function ReaderView({ bookId }: { bookId: string }) {
     const onHide = () => { if (document.visibilityState === 'hidden') save(); };
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', save);
-    return () => { document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', save); save(); };
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', save);
+      if (readyOnceRef.current) save();
+    };
   }, [save]);
 
   // 画面が非表示になったら読み上げ中のみ一時停止する（保存処理とは独立させる）
@@ -90,6 +97,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
   useEffect(() => { restoreRef.current = reader.initialProgress; }, [reader.initialProgress]);
 
   const onReady = (count: number, root: HTMLElement) => {
+    readyOnceRef.current = true;
     rootRef.current = root;
     const el = scroller.current;
     if (el) {
@@ -118,7 +126,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
         <span className="icon-btn" />
       </header>
       <div ref={scroller} className="reader-scroll" onScroll={onScroll}>
-        {reader.error && <p className="empty">{reader.error}</p>}
+        {reader.error && (<>{nav}<p className="empty">{reader.error}</p></>)}
         {reader.loaded && (<>{nav}<ChapterContent loaded={reader.loaded} onReady={onReady} onWordTap={dictionary.openFor} />{nav}</>)}
       </div>
       <PlaybackBar

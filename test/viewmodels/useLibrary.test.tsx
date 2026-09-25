@@ -35,6 +35,14 @@ describe('useLibrary', () => {
     expect(result.current.error).toBe('OPF がありません');
     expect(result.current.books).toHaveLength(1);
   });
+  it('ストレージ容量超過時は容量不足の文言になる', async () => {
+    const d = deps();
+    d.books.addBook = vi.fn(async () => { throw new DOMException('quota', 'QuotaExceededError'); });
+    const { result } = renderHook(() => useLibrary(d));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.importFile(new File([new Uint8Array([1])], 'x.epub')));
+    expect(result.current.error).toBe('空き容量が足りません。不要な本を削除してください');
+  });
   it('削除で一覧から消える', async () => {
     const d = deps();
     const { result } = renderHook(() => useLibrary(d));

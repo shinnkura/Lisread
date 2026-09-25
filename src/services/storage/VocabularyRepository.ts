@@ -1,5 +1,6 @@
 import type { VocabularyEntry } from '../../models/types';
 import type { LisreadDb } from './db';
+import { newId } from './id';
 
 export interface VocabularyRepositoryPort {
   findByLemma(lemma: string): Promise<VocabularyEntry | undefined>;
@@ -18,7 +19,7 @@ export class VocabularyRepository implements VocabularyRepositoryPort {
     return this.db.transaction('rw', this.db.vocabulary, async () => {
       const existing = await this.findByLemma(input.lemma);
       if (existing) return existing;
-      const entry: VocabularyEntry = { ...input, id: crypto.randomUUID(), createdAt: Date.now() };
+      const entry: VocabularyEntry = { ...input, id: newId(), createdAt: Date.now() };
       await this.db.vocabulary.add(entry);
       return entry;
     });

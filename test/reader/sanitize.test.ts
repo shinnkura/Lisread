@@ -13,10 +13,13 @@ describe('sanitizeChapter', () => {
     expect(imgs[1].getAttribute('src')).toBeNull();
     expect(el.querySelector('a')?.getAttribute('href')).toBeNull();
   });
-  it('svg image の xlink:href と link[rel=stylesheet] も差し替える', () => {
-    const el = sanitizeChapter('<link rel="stylesheet" href="../style.css"/><svg><image xlink:href="../images/pic%201.png"/></svg>',
-      'OEBPS/text/ch1.xhtml', (p) => (p.endsWith('.css') ? 'blob:css' : 'blob:pic'));
-    expect(el.querySelector('link')?.getAttribute('href')).toBe('blob:css');
+  it('svg image の xlink:href を差し替え、link と style は丸ごと除去する', () => {
+    const el = sanitizeChapter(
+      '<link rel="stylesheet" href="../style.css"/><style>p{color:red}</style><svg><image xlink:href="../images/pic%201.png"/></svg>',
+      'OEBPS/text/ch1.xhtml', (p) => (p.endsWith('.css') ? 'blob:css' : 'blob:pic'),
+    );
+    expect(el.querySelector('link')).toBeNull();
+    expect(el.querySelector('style')).toBeNull();
     expect(el.querySelector('image')?.getAttribute('href') ?? el.querySelector('image')?.getAttribute('xlink:href')).toBe('blob:pic');
   });
 });

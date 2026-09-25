@@ -36,6 +36,7 @@ export function useReader(deps: { books: BookRepositoryPort }, bookId: string) {
     setChapterIndex(index);
     setLoading(false);
     if (!next) setError('この章を表示できません');
+    else setError(null);
     return next !== null;
   }, [deps.books, bookId]);
 
@@ -60,8 +61,8 @@ export function useReader(deps: { books: BookRepositoryPort }, bookId: string) {
     readyResolver.current?.(false);
     const ready = new Promise<boolean>((res) => { readyResolver.current = res; });
     setInitialProgress(0);
-    await deps.books.updateProgress(bookId, index, 0);
     if (!(await open(index))) { readyResolver.current = null; return false; }
+    await deps.books.updateProgress(bookId, index, 0);
     return ready;
   }, [book, bookId, deps.books, open]);
 

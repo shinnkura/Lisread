@@ -1,11 +1,6 @@
 {
   "name": "lisread",
   "version": "0.1.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
   "scripts": {
     "test": "vitest run",
     "dev": "vite",
@@ -14,10 +9,8 @@
     "typecheck": "tsc --noEmit",
     "dict": "node scripts/build-dict.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "private": "true",
+  "license": "MIT",
+  "private": true,
   "type": "module",
   "dependencies": {
     "dexie": "^4.4.6",

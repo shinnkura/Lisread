@@ -1,5 +1,6 @@
 import type { Book, Chapter, Asset, ParsedEpub } from '../../models/types';
 import type { LisreadDb } from './db';
+import { newId } from './id';
 
 export interface BookRepositoryPort {
   listBooks(): Promise<Book[]>;
@@ -20,7 +21,7 @@ export class BookRepository implements BookRepositoryPort {
   getBook(id: string) {
     return this.db.books.get(id);
   }
-  async addBook(parsed: ParsedEpub, id: string = crypto.randomUUID()): Promise<Book> {
+  async addBook(parsed: ParsedEpub, id: string = newId()): Promise<Book> {
     const book: Book = {
       id, title: parsed.title, author: parsed.author, cover: parsed.cover,
       chapterCount: parsed.chapters.length, lastChapterIndex: 0, lastScrollProgress: 0, addedAt: Date.now(),

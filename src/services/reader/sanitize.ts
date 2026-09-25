@@ -2,7 +2,8 @@ import { dirname, resolvePath } from '../epub/paths';
 
 export type AssetResolver = (zipPath: string) => string | null;
 
-const REMOVE_TAGS = ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'audio', 'video', 'meta', 'title', 'base'];
+// style/link は本文の見た目を汚染するため丸ごと除去する（アプリ独自のタイポグラフィを使う）
+const REMOVE_TAGS = ['script', 'style', 'link', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'audio', 'video', 'meta', 'title', 'base'];
 const XLINK = 'http://www.w3.org/1999/xlink';
 
 export function sanitizeChapter(html: string, chapterHref: string, resolve: AssetResolver): HTMLElement {
@@ -16,11 +17,9 @@ export function sanitizeChapter(html: string, chapterHref: string, resolve: Asse
       if (/^on/i.test(a.name)) e.removeAttribute(a.name);
     }
   }
-  root.querySelectorAll('img[src], link[href], source[src]').forEach((e) => {
-    const attr = e.hasAttribute('src') ? 'src' : 'href';
-    const url = resolve(resolvePath(base, e.getAttribute(attr)!));
-    if (url) e.setAttribute(attr, url); else e.removeAttribute(attr);
-    if (e.tagName === 'LINK' && e.getAttribute('rel') !== 'stylesheet') e.remove();
+  root.querySelectorAll('img[src], source[src]').forEach((e) => {
+    const url = resolve(resolvePath(base, e.getAttribute('src')!));
+    if (url) e.setAttribute('src', url); else e.removeAttribute('src');
   });
   root.querySelectorAll('image').forEach((e) => {
     const raw = e.getAttribute('href') ?? e.getAttributeNS(XLINK, 'href') ?? e.getAttribute('xlink:href');
