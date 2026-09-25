@@ -8,8 +8,17 @@ export interface SpeechService {
   cancel(): void;
 }
 
-const EN = /^en[-_](us|gb)$/i;
+const EN = /^en([-_]|$)/i;
 const CHARS_PER_SEC = 15;
+
+/** en-US → en-GB → その他の英語の順に並べる（一覧表示と自動選択の両方で使う） */
+function englishRank(lang: string): number {
+  const l = lang.replace('_', '-').toLowerCase();
+  return l === 'en-us' ? 0 : l === 'en-gb' ? 1 : 2;
+}
+function sortEnglish(list: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
+  return list.filter((v) => EN.test(v.lang)).sort((a, b) => englishRank(a.lang) - englishRank(b.lang));
+}
 
 export class WebSpeechService implements SpeechService {
   private voiceCache: SpeechSynthesisVoice[] = [];
@@ -28,7 +37,7 @@ export class WebSpeechService implements SpeechService {
       });
     }
     this.voiceCache = list;
-    return list.filter((v) => EN.test(v.lang)).map((v) => ({ id: v.voiceURI, name: v.name, lang: v.lang.replace('_', '-') }));
+    return sortEnglish(list).map((v) => ({ id: v.voiceURI, name: v.name, lang: v.lang.replace('_', '-') }));
   }
 
   speak(text: string, opts: { voiceId: string | null; rate: number }): Promise<SpeakResult> {
@@ -40,8 +49,11 @@ export class WebSpeechService implements SpeechService {
       const u = new SpeechSynthesisUtterance(text);
       u.rate = opts.rate;
       u.lang = 'en-US';
-      const v = opts.voiceId ? this.voiceCache.find((x) => x.voiceURI === opts.voiceId) : undefined;
-      if (v) { u.voice = v; u.lang = v.lang; }
+      // iOS Safari は voice 未指定だと lang を無視して端末の既定音声（日本語など）で読むため、
+      // 指定がない・見つからない場合も必ず英語音声を割り当てる
+      if (this.voiceCache.length === 0) this.voiceCache = synth.getVoices();
+      const chosen = (opts.voiceId ? this.voiceCache.find((x) => x.voiceURI === opts.voiceId) : undefined) ?? sortEnglish(this.voiceCache)[0];
+      if (chosen) { u.voice = chosen; u.lang = chosen.lang; }
       u.onend = () => finish('ended');
       u.onerror = (e) => finish(e.error === 'interrupted' || e.error === 'canceled' ? 'cancelled' : 'ended');
       const estimateMs = (text.length / CHARS_PER_SEC) * 1000 / opts.rate;

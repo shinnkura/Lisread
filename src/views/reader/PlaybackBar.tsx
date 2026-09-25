@@ -22,7 +22,7 @@ export function PlaybackBar(p: Props) {
         <span className="rate">{p.rate.toFixed(1)}x</span>
         <button className="icon-btn" aria-label="速く" onClick={() => p.onRate(p.rate + 0.1)}>+</button>
         <select aria-label="音声" value={selectedVoiceId} onChange={(e) => p.onVoice(e.target.value || null)}>
-          <option value="">既定の音声</option>
+          <option value="">自動（英語）</option>
           {p.voices.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.lang})</option>)}
         </select>
       </div>

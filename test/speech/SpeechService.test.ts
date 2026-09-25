@@ -28,6 +28,24 @@ describe('WebSpeechService', () => {
     s.fire();
     expect((await p).map((v) => v.id)).toEqual(['a', 'c']);
   });
+  it('英語なら他の地域も含め、en-US・en-GB を先頭に並べる', async () => {
+    const s = fakeSynth([{ voiceURI: 'au', name: 'Karen', lang: 'en-AU' }, { voiceURI: 'gb', name: 'Daniel', lang: 'en-GB' }, { voiceURI: 'ja', name: 'Kyoko', lang: 'ja-JP' }, { voiceURI: 'us', name: 'Ava', lang: 'en-US' }]);
+    const svc = new WebSpeechService(s as unknown as SpeechSynthesis);
+    expect((await svc.getVoices()).map((v) => v.id)).toEqual(['us', 'gb', 'au']);
+  });
+  it('音声未指定なら英語音声を自動で割り当てる（iOS は lang だけでは日本語で読むため）', async () => {
+    const s = fakeSynth([{ voiceURI: 'ja', name: 'Kyoko', lang: 'ja-JP' }, { voiceURI: 'gb', name: 'Daniel', lang: 'en-GB' }, { voiceURI: 'us', name: 'Samantha', lang: 'en-US' }]);
+    const svc = new WebSpeechService(s as unknown as SpeechSynthesis);
+    void svc.speak('Hello.', { voiceId: null, rate: 1 });
+    expect((s.current!.voice as { voiceURI: string }).voiceURI).toBe('us');
+    expect(s.current!.lang).toBe('en-US');
+  });
+  it('保存済みの音声 ID が見つからなくても英語音声にフォールバックする', async () => {
+    const s = fakeSynth([{ voiceURI: 'ja', name: 'Kyoko', lang: 'ja-JP' }, { voiceURI: 'gb', name: 'Daniel', lang: 'en-GB' }]);
+    const svc = new WebSpeechService(s as unknown as SpeechSynthesis);
+    void svc.speak('Hello.', { voiceId: 'gone', rate: 1 });
+    expect((s.current!.voice as { voiceURI: string }).voiceURI).toBe('gb');
+  });
   it('end で ended、cancel で cancelled', async () => {
     const s = fakeSynth();
     const svc = new WebSpeechService(s as unknown as SpeechSynthesis);
