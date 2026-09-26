@@ -80,8 +80,9 @@ export async function loadKokoro(opts: { modelFile?: KokoroModelFile; onProgress
   stage('ランタイム起動', t);
   t = performance.now();
   const { phonemize } = await import('phonemizer');
-  await phonemize('hello', 'en-us'); // espeak-ng の初期化をここで済ませ、生成時に固まって見えないようにする
-  stage('音素化ライブラリ準備', t);
+  // espeak-ng の初期化をここで済ませる。iPhone Safari で固まる事例があるため 20 秒で打ち切り、読み込み自体は続行する
+  const warm = await Promise.race([phonemize('hello', 'en-us').then(() => 'ok'), new Promise<string>((r) => setTimeout(() => r('timeout'), 20000))]);
+  stage(warm === 'ok' ? '音素化ライブラリ準備' : '音素化ライブラリ準備（20 秒で応答なし。音素化は使えない可能性）', t);
   t = performance.now();
   const vocab = vocabFromTokenizerJson(JSON.parse(new TextDecoder().decode(await fetchCached(`${base}/tokenizer.json`, opts.onProgress))));
   let modelBuf: ArrayBuffer | null = await fetchCached(`${base}/onnx/${modelFile}.onnx`, opts.onProgress);

@@ -12,6 +12,15 @@ const VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'am_adam', 'am_
 // Node での比較: uint8 は q8 と同速で 2 倍のサイズ、q8f16 / fp16 は CPU（wasm）で動かないため q8 のみ
 const MODELS: { id: KokoroModelFile; label: string }[] = [{ id: 'model_quantized', label: 'q8（約 92MB）' }];
 const DEFAULT_TEXT = 'Hello, how are you today?';
+// 音素化を通さずに推論だけを測るための固定音素（"Hello, how are you today?" を espeak で音素化した結果）
+const FIXED_PHONEMES = 'həlˈoʊ, hˌaʊ ɑːɹ juː tədˈeɪ?';
+
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise((res, rej) => {
+    const t = setTimeout(() => rej(new Error(`${what}が ${ms / 1000} 秒以内に終わりませんでした`)), ms);
+    p.then((v) => { clearTimeout(t); res(v); }, (e) => { clearTimeout(t); rej(e); });
+  });
+}
 
 export function TtsLabView() {
   const [modelFile, setModelFile] = useState<KokoroModelFile>('model_quantized');
@@ -69,7 +78,7 @@ export function TtsLabView() {
     }
   };
 
-  const generate = async () => {
+  const generate = async (fixedPhonemes?: string) => {
     unlockAudio();
     const k = kokoro.current;
     if (!k) { add('先にモデルを読み込んでください'); return; }
@@ -77,9 +86,15 @@ export function TtsLabView() {
     try {
       const lang: KokoroLang = voice.startsWith('b') ? 'b' : 'a';
       const t0 = performance.now();
-      add('音素化開始');
-      const ps = await textToPhonemes(text, lang, k.phonemize);
-      add(`音素化 ${((performance.now() - t0) / 1000).toFixed(2)} 秒: ${ps}`);
+      let ps: string;
+      if (fixedPhonemes) {
+        ps = fixedPhonemes;
+        add(`固定の音素を使用: ${ps}`);
+      } else {
+        add('音素化開始');
+        ps = await withTimeout(textToPhonemes(text, lang, k.phonemize), 20000, '音素化');
+        add(`音素化 ${((performance.now() - t0) / 1000).toFixed(2)} 秒: ${ps}`);
+      }
       const v = await k.getVoice(voice);
       add(`音声データ取得済み。推論開始（トークン ${k.engine.tokenize(ps).length}）`);
       const t1 = performance.now();
@@ -121,6 +136,7 @@ export function TtsLabView() {
         </select></label>
         <textarea className="lab-text" value={text} onChange={(e) => setText(e.target.value)} rows={4} />
         <button className="btn btn-primary" onClick={() => void generate()} disabled={busy}>2. 生成して再生</button>
+        <button className="btn" onClick={() => void generate(FIXED_PHONEMES)} disabled={busy}>3. 音素化を省いて推論だけ試す（固定の例文）</button>
         <h2>ログ</h2>
         <pre className="lab-log" data-testid="lab-log">{log.join('\n') || '（まだありません）'}</pre>
         <h2>この端末の標準音声（Safari が公開しているもの）</h2>
