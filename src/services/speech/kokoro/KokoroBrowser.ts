@@ -70,16 +70,26 @@ export function initOrtWasm(): Promise<OrtLike> {
   return ortPromise;
 }
 
-export async function loadKokoro(opts: { modelFile?: KokoroModelFile; onProgress?: (p: KokoroProgress) => void; hfBase?: string } = {}): Promise<LoadedKokoro> {
+export async function loadKokoro(opts: { modelFile?: KokoroModelFile; onProgress?: (p: KokoroProgress) => void; onStage?: (stage: string) => void; hfBase?: string } = {}): Promise<LoadedKokoro> {
   const base = opts.hfBase ?? KOKORO_HF_BASE;
   const modelFile = opts.modelFile ?? 'model_quantized';
+  const stage = (name: string, t0: number) => opts.onStage?.(`${name} ${((performance.now() - t0) / 1000).toFixed(1)} 秒`);
   // 順番が重要: ランタイム起動 → 音素化ライブラリ → モデル。同時に走らせるとメモリのピークが上がり iPhone で失敗する
+  let t = performance.now();
   const ort = await initOrtWasm();
+  stage('ランタイム起動', t);
+  t = performance.now();
   const { phonemize } = await import('phonemizer');
+  await phonemize('hello', 'en-us'); // espeak-ng の初期化をここで済ませ、生成時に固まって見えないようにする
+  stage('音素化ライブラリ準備', t);
+  t = performance.now();
   const vocab = vocabFromTokenizerJson(JSON.parse(new TextDecoder().decode(await fetchCached(`${base}/tokenizer.json`, opts.onProgress))));
   let modelBuf: ArrayBuffer | null = await fetchCached(`${base}/onnx/${modelFile}.onnx`, opts.onProgress);
+  stage('モデル取得', t);
+  t = performance.now();
   const engine = await KokoroEngine.create(ort, new Uint8Array(modelBuf), vocab);
   modelBuf = null; // セッション作成後は JS 側のコピーを手放してメモリを戻す
+  stage('セッション作成', t);
   const voices = new Map<string, Float32Array>();
   return {
     engine,

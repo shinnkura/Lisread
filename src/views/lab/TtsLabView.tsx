@@ -56,6 +56,7 @@ export function TtsLabView() {
       add(`モデル読み込み開始 ${modelFile}（先にランタイム起動 → モデル取得の順）`);
       kokoro.current = await loadKokoro({
         modelFile,
+        onStage: (st) => add(`  ${st}`),
         onProgress: (p) => setProgress(p.total ? `${p.file} ${Math.round((p.loaded / p.total) * 100)}%` : `${p.file} ${Math.round(p.loaded / 1024 / 1024)}MB`),
       });
       add(`モデル読み込み完了 ${((performance.now() - t0) / 1000).toFixed(1)} 秒`);
@@ -76,9 +77,12 @@ export function TtsLabView() {
     try {
       const lang: KokoroLang = voice.startsWith('b') ? 'b' : 'a';
       const t0 = performance.now();
-      const [ps, v] = await Promise.all([textToPhonemes(text, lang, k.phonemize), k.getVoice(voice)]);
+      add('音素化開始');
+      const ps = await textToPhonemes(text, lang, k.phonemize);
+      add(`音素化 ${((performance.now() - t0) / 1000).toFixed(2)} 秒: ${ps}`);
+      const v = await k.getVoice(voice);
+      add(`音声データ取得済み。推論開始（トークン ${k.engine.tokenize(ps).length}）`);
       const t1 = performance.now();
-      add(`音素化 ${((t1 - t0) / 1000).toFixed(2)} 秒: ${ps}`);
       const pcm = await k.engine.synthesize(ps, v, 1);
       const genSec = (performance.now() - t1) / 1000;
       const audioSec = pcm.length / KOKORO_SAMPLE_RATE;
