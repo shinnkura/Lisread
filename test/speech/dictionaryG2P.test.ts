@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { DictionaryG2P, lookupWord, approximateSpelling } from '../../src/services/speech/kokoro/DictionaryG2P';
 
 const gold = { hello: 'həlˈO', how: 'hˌW', are: 'ɑɹ', you: 'ju', today: 'tədˈA', stumble: 'stˈʌmbᵊl', read: { DEFAULT: 'ɹˈid', VBD: 'ɹˈɛd' }, stop: 'stˈɑp', try: 'tɹˈI', cat: 'kˈæt', dog: 'dˈɔg' };
-const silver = { bennet: 'bˈɛnɪt' };
+const silver = { bennet: 'bˈɛnɪt', apple: 'ˈæpəl' };
 
 describe('lookupWord', () => {
   it('直接ヒット・品詞付き・大文字', () => {
@@ -35,7 +35,8 @@ describe('DictionaryG2P', () => {
     const fb = vi.fn(async (w: string) => (w === 'Darcy' ? 'dˈɑɹsi' : null));
     const g2p = new DictionaryG2P([gold, silver], fb);
     expect(await g2p.phonemize('Hello, how are you today?')).toBe('həlˈO, hˌW ɑɹ ju tədˈA?');
-    expect(await g2p.phonemize('Darcy and Bennet read.')).toBe('dˈɑɹsi ˈænd bˈɛnɪt ɹˈid.');
+    expect(await g2p.phonemize('Darcy and Bennet read.')).toBe('dˈɑɹsi ənd bˈɛnɪt ɹˈid.');
+    expect(await g2p.phonemize('the cat, the apple, a dog')).toBe('ðə kˈæt, ði ˈæpəl, ə dˈɔg');
     expect(fb).toHaveBeenCalledWith('Darcy');
   });
 });

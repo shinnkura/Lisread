@@ -71,11 +71,17 @@ export class DictionaryG2P {
   async phonemize(text: string): Promise<string> {
     const tokens = text.match(/[A-Za-z]+(?:'[A-Za-z]+)?|[0-9]+|[;:,.!?¡¿—…"«»“”()]+|\s+|./g) ?? [];
     const parts: string[] = [];
-    for (const tok of tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
       if (/^\s+$/.test(tok)) { parts.push(' '); continue; }
       if (PUNCT_TOKEN.test(tok)) { parts.push(tok); continue; }
       if (!/[A-Za-z]/.test(tok)) continue;
-      let ps = lookupWord(tok, this.lexicons);
+      // 機能語は文中では弱形で読む（辞書の見出しは強形になっていることがある）
+      const lower = tok.toLowerCase();
+      const nextWord = tokens.slice(i + 1).find((t) => /[A-Za-z]/.test(t)) ?? '';
+      const nextIsVowel = /^[aeiouAEIOU]/.test(nextWord);
+      const weak: Record<string, string> = { a: 'ə', an: 'ən', the: nextIsVowel ? 'ði' : 'ðə', to: nextIsVowel ? 'tu' : 'tə', of: 'əv', and: 'ənd' };
+      let ps: string | null = weak[lower] ?? lookupWord(tok, this.lexicons);
       if (!ps && tok.includes("'")) { const [a, b] = tok.split("'"); const pa = lookupWord(a, this.lexicons); if (pa) ps = pa + (b === 's' ? 'z' : lookupWord(b, this.lexicons) ?? ''); }
       if (!ps && this.fallback) { try { ps = await this.fallback(tok); } catch { ps = null; } }
       if (!ps) ps = approximateSpelling(tok);
