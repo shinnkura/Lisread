@@ -1,0 +1,2 @@
+us_gold.json / us_silver.json / gb_gold.json / gb_silver.json は misaki（https://github.com/hexgrad/misaki）の英語発音辞書です。
+ライセンス: Apache License 2.0（Copyright hexgrad）。Kokoro の音素化のために同梱しています。

@@ -21,7 +21,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,json,png,svg,webmanifest}'],
         // 試作の Kokoro（ニューラル TTS）関連は巨大なので事前キャッシュしない（必要時にネットワークから取得）
-        globIgnores: ['**/*.wasm', '**/kokoro-*.js'],
+        globIgnores: ['**/*.wasm', '**/kokoro-*.js', '**/g2p/*.json'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
       },
     }),

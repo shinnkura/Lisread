@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { navigate } from '../../app/router';
-import { loadKokoro, type LoadedKokoro, type KokoroModelFile } from '../../services/speech/kokoro/KokoroBrowser';
-import { textToPhonemes, type KokoroLang } from '../../services/speech/kokoro/phonemes';
+import { loadKokoro, type LoadedKokoro, type KokoroModelFile, type G2PMode } from '../../services/speech/kokoro/KokoroBrowser';
+import type { KokoroLang } from '../../services/speech/kokoro/phonemes';
 import { KOKORO_SAMPLE_RATE } from '../../services/speech/kokoro/KokoroEngine';
 import './lab.css';
 
@@ -24,6 +24,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
 
 export function TtsLabView() {
   const [modelFile, setModelFile] = useState<KokoroModelFile>('model_quantized');
+  const [g2p, setG2p] = useState<G2PMode>('dictionary');
   const [voice, setVoice] = useState<string>('af_heart');
   const [text, setText] = useState(DEFAULT_TEXT);
   const [log, setLog] = useState<string[]>([]);
@@ -65,6 +66,7 @@ export function TtsLabView() {
       add(`モデル読み込み開始 ${modelFile}（先にランタイム起動 → モデル取得の順）`);
       kokoro.current = await loadKokoro({
         modelFile,
+        g2p,
         onStage: (st) => add(`  ${st}`),
         onProgress: (p) => setProgress(p.total ? `${p.file} ${Math.round((p.loaded / p.total) * 100)}%` : `${p.file} ${Math.round(p.loaded / 1024 / 1024)}MB`),
       });
@@ -92,7 +94,7 @@ export function TtsLabView() {
         add(`固定の音素を使用: ${ps}`);
       } else {
         add('音素化開始');
-        ps = await withTimeout(textToPhonemes(text, lang, k.phonemize), 20000, '音素化');
+        ps = await withTimeout(k.toPhonemes(text, lang), 20000, '音素化');
         add(`音素化 ${((performance.now() - t0) / 1000).toFixed(2)} 秒: ${ps}`);
       }
       const v = await k.getVoice(voice);
@@ -128,6 +130,9 @@ export function TtsLabView() {
         <p className="muted">端末: {typeof navigator !== 'undefined' ? navigator.userAgent : ''}</p>
         <label className="lab-block">モデル <select value={modelFile} onChange={(e) => setModelFile(e.target.value as KokoroModelFile)} disabled={busy}>
           {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select></label>
+        <label className="lab-block">音素化 <select value={g2p} onChange={(e) => setG2p(e.target.value as G2PMode)} disabled={busy}>
+          <option value="dictionary">辞書（misaki、推奨）</option><option value="espeak">espeak-ng（wasm）</option>
         </select></label>
         <button className="btn btn-primary" onClick={() => void loadModel()} disabled={busy}>1. モデルを読み込む</button>
         {busy && <p className="muted lab-progress">処理中… {elapsed} 秒経過{progress ? ` / ${progress}` : ''}</p>}
