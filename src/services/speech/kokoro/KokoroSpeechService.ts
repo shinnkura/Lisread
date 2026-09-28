@@ -27,23 +27,48 @@ export const KOKORO_VOICES: Voice[] = [
 /** 生成済み音声の再生先。テストでは差し替える */
 export interface AudioSink {
   /** 再生を始め、完了する Promise と中断手段を返す */
-  play(pcm: Float32Array, sampleRate: number): { done: Promise<void>; stop(): void };
+  play(pcm: Float32Array, sampleRate: number): Promise<{ done: Promise<void>; stop(): void }> | { done: Promise<void>; stop(): void };
   /** ユーザー操作の中で呼び、音声出力を使えるようにする（iOS 対策） */
   unlock(): void;
+}
+
+/** iOS の消音スイッチが入っていても鳴るようにする（Safari 16.4 以降） */
+function usePlaybackAudioSession(): void {
+  const session = (navigator as { audioSession?: { type: string } }).audioSession;
+  if (session) {
+    try { session.type = 'playback'; } catch { /* 未対応なら諦める */ }
+  }
 }
 
 export class WebAudioSink implements AudioSink {
   private ctx: AudioContext | null = null;
   private ensure(): AudioContext {
-    this.ctx ??= new AudioContext();
+    if (!this.ctx) {
+      usePlaybackAudioSession();
+      const Ctor = AudioContext ?? (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!;
+      this.ctx = new Ctor();
+      // iOS では無音を 1 回鳴らしておかないと、以後の再生が許可されないことがある
+      const silent = this.ctx.createBufferSource();
+      silent.buffer = this.ctx.createBuffer(1, 1, 22050);
+      silent.connect(this.ctx.destination);
+      silent.start();
+    }
     return this.ctx;
   }
   unlock() {
     try { void this.ensure().resume(); } catch { /* 未対応環境では何もしない */ }
   }
-  play(pcm: Float32Array, sampleRate: number) {
+  /** 音声出力が使える状態か。ユーザー操作の外で作られた場合は suspended のまま */
+  state(): string {
+    return this.ctx?.state ?? 'none';
+  }
+  async play(pcm: Float32Array, sampleRate: number) {
     const ctx = this.ensure();
-    void ctx.resume();
+    usePlaybackAudioSession();
+    try { await ctx.resume(); } catch { /* 失敗しても下で状態を見る */ }
+    if (ctx.state !== 'running') {
+      throw new Error('音声の出力が許可されていません。再生ボタンをもう一度押すか、本体の消音スイッチを確認してください');
+    }
     const buf = ctx.createBuffer(1, pcm.length, sampleRate);
     buf.copyToChannel(pcm as Float32Array<ArrayBuffer>, 0);
     const src = ctx.createBufferSource();
@@ -87,6 +112,11 @@ export class KokoroSpeechService implements SpeechService {
 
   isSupported(): boolean {
     return typeof AudioContext !== 'undefined' || typeof (globalThis as { webkitAudioContext?: unknown }).webkitAudioContext !== 'undefined';
+  }
+
+  /** 再生ボタンを押した瞬間（ユーザー操作の中）に呼ぶ。iOS はこの時点でしか音声出力を許可しない */
+  unlock(): void {
+    this.sink.unlock();
   }
 
   async getVoices(): Promise<Voice[]> {
@@ -147,6 +177,9 @@ export class KokoroSpeechService implements SpeechService {
     if (!isKokoroVoice(opts.voiceId)) return;
     if (this.pending.some((p) => p.text === text && p.opts.voiceId === opts.voiceId && p.opts.rate === opts.rate)) return;
     this.pending.push({ text, opts });
+    // 何も生成していない（＝再生前や停止中）なら、待たずに作り始める。
+    // 再生ボタンを押した瞬間から鳴るまでの待ち時間を減らすため
+    if (this.inflight.size === 0) this.startPending();
   }
 
   private startPending(): void {
@@ -167,7 +200,15 @@ export class KokoroSpeechService implements SpeechService {
       throw new Error(`音声を作れませんでした: ${(e as Error).message ?? String(e)}`);
     }
     if (my !== this.generation) return 'cancelled';
-    const handle = this.sink.play(pcm, KOKORO_SAMPLE_RATE);
+    let handle: { done: Promise<void>; stop(): void };
+    try {
+      handle = await this.sink.play(pcm, KOKORO_SAMPLE_RATE);
+    } catch (e) {
+      if (my !== this.generation) return 'cancelled';
+      throw e;
+    }
+    if (my !== this.generation) { handle.stop(); return 'cancelled'; }
+    opts.onStart?.();
     this.current = handle;
     this.startPending();
     await handle.done;

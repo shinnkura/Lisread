@@ -131,3 +131,37 @@ describe('usePlayback（準備が要るエンジン）', () => {
     expect(speech.speak).not.toHaveBeenCalled();
   });
 });
+
+describe('usePlayback（音声出力の解禁と生成中の表示）', () => {
+  it('再生ボタンと音声選択のたびに unlock を呼ぶ', () => {
+    const speech = {
+      isSupported: () => true,
+      getVoices: async () => [],
+      speak: vi.fn(async () => 'ended' as const),
+      cancel: vi.fn(),
+      unlock: vi.fn(),
+    };
+    const { result } = renderHook(() => usePlayback({ speech, getSentenceText: (i) => (i === 0 ? 'one' : null), onSentenceChange: () => {}, onChapterEnd: async () => false }));
+    act(() => result.current.play(0));
+    expect(speech.unlock).toHaveBeenCalledTimes(1);
+    act(() => { result.current.setVoice('v1'); });
+    expect(speech.unlock).toHaveBeenCalledTimes(2);
+  });
+
+  it('鳴り出すまで待つ場合は「音声を作っています…」と出し、鳴ったら消す', async () => {
+    let start: (() => void) | null = null;
+    let finish: ((r: 'ended') => void) | null = null;
+    const speech = {
+      isSupported: () => true,
+      getVoices: async () => [],
+      speak: vi.fn((_t: string, o: { onStart?: () => void }) => { start = () => o.onStart?.(); return new Promise<'ended'>((r) => { finish = r; }); }),
+      cancel: vi.fn(),
+    };
+    const { result } = renderHook(() => usePlayback({ speech, getSentenceText: (i) => (i === 0 ? 'one' : null), onSentenceChange: () => {}, onChapterEnd: async () => false }));
+    act(() => result.current.play(0));
+    await waitFor(() => expect(result.current.preparing).toBe('音声を作っています…'));
+    act(() => start!());
+    expect(result.current.preparing).toBeNull();
+    await act(async () => { finish!('ended'); });
+  });
+});

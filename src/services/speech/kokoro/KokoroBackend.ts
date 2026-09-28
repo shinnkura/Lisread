@@ -40,6 +40,11 @@ export class InPageBackend implements KokoroBackend {
   }
 }
 
+/** 1 文の生成を待つ上限。これを超えたら Worker が落ちたとみなす */
+const SYNTH_TIMEOUT_MS = 90000;
+/** 読み込みを待つ上限（通信が遅い場合もあるので長めに取る） */
+const LOAD_TIMEOUT_MS = 600000;
+
 type WorkerOut =
   | { type: 'stage'; message: string }
   | { type: 'loaded' }
@@ -70,7 +75,16 @@ export class WorkerBackend implements KokoroBackend {
       this.waiting.clear();
     };
     return new Promise<void>((resolve, reject) => {
-      this.loadHandlers = { resolve, reject, onStage };
+      const timer = setTimeout(() => {
+        if (!this.loadHandlers) return;
+        this.loadHandlers = null;
+        reject(new Error('音声モデルの読み込みが終わりませんでした（通信または端末のメモリ不足の可能性があります）'));
+      }, LOAD_TIMEOUT_MS);
+      this.loadHandlers = {
+        resolve: () => { clearTimeout(timer); resolve(); },
+        reject: (e) => { clearTimeout(timer); reject(e); },
+        onStage,
+      };
       this.worker!.postMessage({ type: 'load', modelFile: this.opts.modelFile });
     });
   }
@@ -90,7 +104,16 @@ export class WorkerBackend implements KokoroBackend {
     if (!worker) return Promise.reject(new Error('音声モデルが読み込まれていません'));
     const id = this.nextId++;
     return new Promise<Float32Array>((resolve, reject) => {
-      this.waiting.set(id, { resolve, reject });
+      // Worker がメモリ不足などで無言で落ちると応答が来なくなるため、待ち続けずに理由を返す
+      const timer = setTimeout(() => {
+        if (!this.waiting.has(id)) return;
+        this.waiting.delete(id);
+        reject(new Error('音声の生成が返ってきませんでした（端末のメモリ不足の可能性があります）'));
+      }, SYNTH_TIMEOUT_MS);
+      this.waiting.set(id, {
+        resolve: (pcm) => { clearTimeout(timer); resolve(pcm); },
+        reject: (e) => { clearTimeout(timer); reject(e); },
+      });
       worker.postMessage({ type: 'synth', id, text, voice: voiceName, rate });
     });
   }
@@ -142,9 +165,9 @@ export class WorkerPool implements KokoroBackend {
 export function decideWorkerCount(): number {
   const forced = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('tts_workers')) : NaN;
   if (Number.isFinite(forced) && forced >= 1 && forced <= 4) return Math.floor(forced);
-  const cores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency ?? 2) : 2;
-  // モデルは Worker ごとに約 200MB 使うため、多くても 2 つに抑える
-  return cores >= 4 ? 2 : 1;
+  // Worker ごとにモデルを読むため、増やすとメモリ不足で落ちる端末がある。
+  // 既定は 1 つに抑え、増やしたい場合だけ ?tts_workers=2 のように指定してもらう
+  return 1;
 }
 
 export function createBackend(opts: BackendOptions = {}): KokoroBackend {

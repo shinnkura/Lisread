@@ -3,6 +3,8 @@ import { navigate } from '../../app/router';
 import { loadKokoro, type LoadedKokoro, type KokoroModelFile, type G2PMode } from '../../services/speech/kokoro/KokoroBrowser';
 import type { KokoroLang } from '../../services/speech/kokoro/phonemes';
 import { KOKORO_SAMPLE_RATE } from '../../services/speech/kokoro/KokoroEngine';
+import { KokoroSpeechService, KOKORO_VOICES } from '../../services/speech/kokoro/KokoroSpeechService';
+import { decideWorkerCount } from '../../services/speech/kokoro/KokoroBackend';
 import './lab.css';
 
 // 試作（spike）: ブラウザ内ニューラル TTS（Kokoro）が iPhone で実用になるかを測る検証ページ。
@@ -80,6 +82,28 @@ export function TtsLabView() {
     }
   };
 
+  // アプリ本体と同じ経路（Worker + 音声出力）で 1 文を鳴らしてみる診断
+  const testAppPath = async () => {
+    setBusy(true);
+    const t0 = performance.now();
+    const svc = new KokoroSpeechService();
+    try {
+      svc.unlock();
+      add(`アプリと同じ経路で試します（並行生成 ${decideWorkerCount()} / Worker ${typeof Worker !== 'undefined' ? 'あり' : 'なし'}）`);
+      const voiceId = KOKORO_VOICES.find((v) => v.id.endsWith(voice))?.id ?? KOKORO_VOICES[0].id;
+      await svc.prepare(voiceId, (m) => add(`  ${m}`));
+      add(`準備完了 ${((performance.now() - t0) / 1000).toFixed(1)} 秒。再生します`);
+      const t1 = performance.now();
+      const r = await svc.speak(text, { voiceId, rate: 1, onStart: () => add(`鳴り始め ${((performance.now() - t1) / 1000).toFixed(1)} 秒`) });
+      add(`再生終了: ${r}（合計 ${((performance.now() - t1) / 1000).toFixed(1)} 秒）`);
+    } catch (e) {
+      add(`失敗: ${(e as Error).message ?? String(e)}`);
+    } finally {
+      svc.cancel();
+      setBusy(false);
+    }
+  };
+
   const generate = async (fixedPhonemes?: string) => {
     unlockAudio();
     const k = kokoro.current;
@@ -142,6 +166,7 @@ export function TtsLabView() {
         <textarea className="lab-text" value={text} onChange={(e) => setText(e.target.value)} rows={4} />
         <button className="btn btn-primary" onClick={() => void generate()} disabled={busy}>2. 生成して再生</button>
         <button className="btn" onClick={() => void generate(FIXED_PHONEMES)} disabled={busy}>3. 音素化を省いて推論だけ試す（固定の例文）</button>
+        <button className="btn btn-primary" onClick={() => void testAppPath()} disabled={busy}>4. アプリと同じ経路で鳴らしてみる</button>
         <h2>ログ</h2>
         <pre className="lab-log" data-testid="lab-log">{log.join('\n') || '（まだありません）'}</pre>
         <h2>この端末の標準音声（Safari が公開しているもの）</h2>

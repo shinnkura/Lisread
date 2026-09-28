@@ -85,14 +85,21 @@ describe('KokoroSpeechService', () => {
     expect(synthesize).toHaveBeenCalledTimes(1);
   });
 
-  it('prefetch は予約だけで、現在の文の再生が始まってから生成する', async () => {
+  it('何も作っていないときの prefetch はすぐ作り始める（再生ボタンの待ち時間を減らす）', async () => {
+    const { backend, synthesize } = fakeBackend();
+    const svc = new KokoroSpeechService({ backend, sink: fakeSink() });
+    svc.prefetch('Ahead.', { voiceId: heart, rate: 1 });
+    await vi.waitFor(() => expect(synthesize).toHaveBeenCalledWith('Ahead.', 'af_heart', 1));
+  });
+
+  it('生成中の prefetch は予約だけにして、現在の文の再生が始まってから作る', async () => {
     const sink = fakeSink();
     const order: string[] = [];
     const { backend, synthesize } = fakeBackend((t) => order.push(t));
     const svc = new KokoroSpeechService({ backend, sink });
-    svc.prefetch('Next.', { voiceId: heart, rate: 1 });
-    expect(synthesize).not.toHaveBeenCalled(); // まだ生成しない
     const p = svc.speak('Now.', { voiceId: heart, rate: 1 });
+    svc.prefetch('Next.', { voiceId: heart, rate: 1 });
+    expect(order).not.toContain('Next.'); // 今の文を作っている間は待たせる
     await vi.waitFor(() => expect(order).toEqual(['Now.', 'Next.']));
     sink.end();
     expect(await p).toBe('ended');

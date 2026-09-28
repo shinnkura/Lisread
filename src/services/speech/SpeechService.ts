@@ -1,12 +1,19 @@
 export interface Voice { id: string; name: string; lang: string; engine?: 'web' | 'kokoro' }
 export type SpeakResult = 'ended' | 'cancelled';
-export interface SpeakOptions { voiceId: string | null; rate: number }
+export interface SpeakOptions {
+  voiceId: string | null;
+  rate: number;
+  /** 実際に音が鳴り始めたときに呼ばれる（生成に時間がかかるエンジン用） */
+  onStart?: () => void;
+}
 
 export interface SpeechService {
   isSupported(): boolean;
   getVoices(): Promise<Voice[]>;
   speak(text: string, opts: SpeakOptions): Promise<SpeakResult>;
   cancel(): void;
+  /** ユーザー操作の中で呼び、音声出力を使えるようにする（iOS 対策）。不要なエンジンは未実装でよい */
+  unlock?(): void;
   /** その音声がすぐ使えるか。準備（モデルの取得など）が要るエンジンだけ実装する */
   isPrepared?(voiceId: string | null): boolean;
   /** 音声を使えるようにする（モデルの取得など）。進捗は onProgress に日本語で渡す */
@@ -47,7 +54,7 @@ export class WebSpeechService implements SpeechService {
     return sortEnglish(list).map((v) => ({ id: v.voiceURI, name: v.name, lang: v.lang.replace('_', '-'), engine: 'web' as const }));
   }
 
-  speak(text: string, opts: { voiceId: string | null; rate: number }): Promise<SpeakResult> {
+  speak(text: string, opts: SpeakOptions): Promise<SpeakResult> {
     const synth = this.synth;
     if (!synth) return Promise.resolve('ended');
     return new Promise((resolve) => {
@@ -61,6 +68,7 @@ export class WebSpeechService implements SpeechService {
       if (this.voiceCache.length === 0) this.voiceCache = synth.getVoices();
       const chosen = (opts.voiceId ? this.voiceCache.find((x) => x.voiceURI === opts.voiceId) : undefined) ?? sortEnglish(this.voiceCache)[0];
       if (chosen) { u.voice = chosen; u.lang = chosen.lang; }
+      u.onstart = () => opts.onStart?.();
       u.onend = () => finish('ended');
       u.onerror = (e) => finish(e.error === 'interrupted' || e.error === 'canceled' ? 'cancelled' : 'ended');
       const estimateMs = (text.length / CHARS_PER_SEC) * 1000 / opts.rate;

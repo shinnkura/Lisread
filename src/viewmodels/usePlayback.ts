@@ -54,6 +54,8 @@ export function usePlayback(deps: PlaybackDeps) {
   };
 
   const run = (from: number) => {
+    // ボタンを押した瞬間に音声出力を解禁する（iOS はユーザー操作の外では音を出せない）
+    depsRef.current.speech.unlock?.();
     // 再生中に別の文へ飛ぶ場合（play(n) の呼び直しなど）は、キューに残る古い発話をここで確実に止める
     const wasPlaying = statusRef.current === 'playing';
     if (wasPlaying) depsRef.current.speech.cancel();
@@ -85,15 +87,20 @@ export function usePlayback(deps: PlaybackDeps) {
         d.speech.prefetch?.(t, opts);
       }
       let r: 'ended' | 'cancelled';
+      let started = false;
+      // 生成に時間がかかるエンジンでは、鳴り出すまで「作っています」と出す（固まったように見えないため）
+      const waiting = setTimeout(() => { if (!started && my === runId.current) setPreparing('音声を作っています…'); }, 400);
       try {
-        r = await d.speech.speak(text, opts);
+        r = await d.speech.speak(text, { ...opts, onStart: () => { started = true; clearTimeout(waiting); setPreparing(null); } });
       } catch (e) {
+        clearTimeout(waiting);
         if (my !== runId.current) return;
         // 失敗を黙って飛ばすと無音のまま本が進んでしまうため、理由を出して止める
         setPreparing(`読み上げに失敗しました: ${(e as Error).message ?? String(e)}`);
         setStatus('idle');
         return;
       }
+      clearTimeout(waiting);
       if (my !== runId.current || r === 'cancelled') return;
       return loop(s + 1);
     };
@@ -112,8 +119,8 @@ export function usePlayback(deps: PlaybackDeps) {
   const stopSpeaking = () => { runId.current++; depsRef.current.speech.cancel(); };
 
   const play = useCallback((fromSid?: number) => { run(fromSid ?? sidRef.current); }, []);
-  const pause = useCallback(() => { stopSpeaking(); setStatus('paused'); }, []);
-  const stop = useCallback(() => { stopSpeaking(); setStatus('idle'); setCurrent(0); depsRef.current.onSentenceChange(null); }, []);
+  const pause = useCallback(() => { stopSpeaking(); setStatus('paused'); setPreparing(null); }, []);
+  const stop = useCallback(() => { stopSpeaking(); setStatus('idle'); setCurrent(0); setPreparing(null); depsRef.current.onSentenceChange(null); }, []);
   const toggle = useCallback(() => { if (status === 'playing') pause(); else play(); }, [status, pause, play]);
   const move = useCallback((delta: number) => {
     const target = Math.max(0, sidRef.current + delta);
@@ -125,11 +132,22 @@ export function usePlayback(deps: PlaybackDeps) {
   const prev = useCallback(() => move(-1), [move]);
   const setRate = useCallback((r: number) => { const c = clampRate(r); setRateState(c); localStorage.setItem('lisread.rate', String(c)); }, []);
   const setVoice = useCallback((id: string | null) => {
+    // 音声を選ぶ操作も「ユーザー操作」なので、ここでも解禁しておく
+    depsRef.current.speech.unlock?.();
     setVoiceState(id);
     if (id) localStorage.setItem('lisread.voice', id); else localStorage.removeItem('lisread.voice');
     voiceRef.current = id;
     // 選んだ時点で準備を始める（再生ボタンを押してから待たされないようにする）
-    void ensurePrepared(id);
+    void ensurePrepared(id).then((ok) => {
+      if (!ok) return;
+      // 続けて、これから読む文を先に作っておく
+      const d = depsRef.current;
+      for (let ahead = 0; ahead < PREFETCH_AHEAD; ahead++) {
+        const t = d.getSentenceText(sidRef.current + ahead);
+        if (t === null) break;
+        d.speech.prefetch?.(t, { voiceId: id, rate: rateRef.current });
+      }
+    });
   }, []);
 
   useEffect(() => () => { runId.current++; depsRef.current.speech.cancel(); }, []);

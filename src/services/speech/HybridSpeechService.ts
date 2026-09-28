@@ -20,6 +20,12 @@ export class HybridSpeechService implements SpeechService {
     return [...web, ...kokoro];
   }
 
+  unlock(): void {
+    // どちらの音声が選ばれていても、操作の瞬間に解禁しておく
+    this.web.unlock?.();
+    this.kokoro.unlock?.();
+  }
+
   isPrepared(voiceId: string | null): boolean {
     return this.pick(voiceId).isPrepared?.(voiceId) ?? true;
   }
