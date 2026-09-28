@@ -72,7 +72,7 @@ export class KokoroSpeechService implements SpeechService {
   private loading: Promise<void> | null = null;
   private cache = new Map<string, Float32Array>();
   private inflight = new Map<string, Promise<Float32Array>>();
-  private pending: { text: string; opts: SpeakOptions } | null = null;
+  private pending: { text: string; opts: SpeakOptions }[] = [];
   private current: { stop(): void } | null = null;
   private generation = 0;
   private sink: AudioSink;
@@ -142,15 +142,17 @@ export class KokoroSpeechService implements SpeechService {
   }
 
   prefetch(text: string, opts: SpeakOptions): void {
-    // ここでは予約するだけ。今の文の再生が始まってから生成を始める（単スレッドでは同時に走らせると両方遅くなるため）
+    // ここでは予約するだけ。今の文の再生が始まってから生成を始める
+    // （今の文の生成と取り合うと、待たされている今の文がさらに遅くなるため）
     if (!isKokoroVoice(opts.voiceId)) return;
-    this.pending = { text, opts };
+    if (this.pending.some((p) => p.text === text && p.opts.voiceId === opts.voiceId && p.opts.rate === opts.rate)) return;
+    this.pending.push({ text, opts });
   }
 
   private startPending(): void {
-    const p = this.pending;
-    this.pending = null;
-    if (p) void this.generate(p.text, p.opts).catch(() => { /* 先読みの失敗は無視する */ });
+    const list = this.pending;
+    this.pending = [];
+    for (const p of list) void this.generate(p.text, p.opts).catch(() => { /* 先読みの失敗は無視する */ });
   }
 
   async speak(text: string, opts: SpeakOptions): Promise<SpeakResult> {
@@ -176,7 +178,7 @@ export class KokoroSpeechService implements SpeechService {
 
   cancel(): void {
     this.generation++;
-    this.pending = null;
+    this.pending = [];
     this.current?.stop();
     this.current = null;
   }

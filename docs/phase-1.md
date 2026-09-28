@@ -93,5 +93,8 @@ npm run build          # 本番ビルド（辞書生成 → 型チェック → 
 - 推論は Web Worker で動かす。メインスレッドで動かすと 1 文の生成中ずっと画面が固まるため
 - 音素化は espeak-ng の wasm ではなく misaki の英語発音辞書（Apache-2.0）を使う。iPhone Safari で espeak の wasm が応答しなくなるため
 - ONNX Runtime は GPU 対応版（21MB）ではなく wasm 専用ビルド（11MB、CDN から取得）を使う。iPhone Safari は前者をコンパイルできず Out of memory になる
-- 既知の制約: 生成が実時間より遅い（iPhone で約 1.8 倍）ため、文の切れ目に無音が入る。次の文は現在の文の再生中に先読みするが、それでも追いつかない。マルチスレッド化（cross-origin isolation が必要）で改善する余地がある
+- 生成は実時間より遅い（iPhone で 1 文あたり約 1.8 倍）ため、Worker を複数立てて別々の文を同時に作り、遅れを取り戻す。コア数 4 以上の端末では 2 つ。`?tts_workers=N`（1〜4）で試せる
+- Worker ごとにモデルを読むため、増やすほどメモリを使う（1 つあたり約 200MB）。多すぎると端末が落ちる可能性があるので既定は 2 に抑えている
+- 共有メモリ（SharedArrayBuffer）は使わない。使うには cross-origin isolation の設定が要り、GitHub Pages では Service Worker での細工が必要になるため
+- 既知の制約: それでも追いつかない場合は文の切れ目に無音が入る
 - 既知の制約: 辞書にない固有名詞（Darcy など）は綴りからの近似で読むため、発音が正確でないことがある

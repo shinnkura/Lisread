@@ -9,6 +9,9 @@ export interface PlaybackDeps {
   onChapterEnd(): Promise<boolean>;
 }
 
+/** 何文先まで先に作っておくか。並行生成できる数より少し多めにする */
+const PREFETCH_AHEAD = 3;
+
 const clampRate = (r: number) => Math.round(Math.min(2, Math.max(0.5, r)) * 10) / 10;
 const readRate = () => { const v = Number(localStorage.getItem('lisread.rate')); return v ? clampRate(v) : 1; };
 
@@ -75,9 +78,12 @@ export function usePlayback(deps: PlaybackDeps) {
         if (my !== runId.current) return;
         d = depsRef.current;
       }
-      // 次の文を予約しておく。実際の生成はこの文の再生が始まってから行われる
-      const nextText = d.getSentenceText(s + 1);
-      if (nextText) d.speech.prefetch?.(nextText, opts);
+      // 先の文を予約しておく。実際の生成はこの文の再生が始まってから行われる
+      for (let ahead = 1; ahead <= PREFETCH_AHEAD; ahead++) {
+        const t = d.getSentenceText(s + ahead);
+        if (t === null) break;
+        d.speech.prefetch?.(t, opts);
+      }
       let r: 'ended' | 'cancelled';
       try {
         r = await d.speech.speak(text, opts);

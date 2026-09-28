@@ -102,8 +102,55 @@ export class WorkerBackend implements KokoroBackend {
   }
 }
 
+/**
+ * Worker を複数立てて、別々の文を並行して生成する。生成は 1 文あたり実時間より遅いので、
+ * 並行数を増やすことで「読み上げが追いつかない」状態を解消する。
+ * 共有メモリ（SharedArrayBuffer）は使わないため、特別なサーバー設定は要らない。
+ */
+export class WorkerPool implements KokoroBackend {
+  private workers: KokoroBackend[] = [];
+  private busy: number[] = [];
+
+  constructor(private size: number, private opts: BackendOptions = {}, private create: () => KokoroBackend = () => new WorkerBackend(opts)) {}
+
+  async load(onStage: (message: string) => void): Promise<void> {
+    // 1 つ目で取得した内容は Cache API に入るので、2 つ目以降の読み込みは速い
+    for (let i = 0; i < this.size; i++) {
+      const w = this.create();
+      await w.load((m) => onStage(this.size > 1 && i > 0 ? `${m}（${i + 1}/${this.size}）` : m));
+      this.workers.push(w);
+      this.busy.push(0);
+    }
+  }
+
+  synthesize(text: string, voiceName: string, rate: number): Promise<Float32Array> {
+    if (this.workers.length === 0) return Promise.reject(new Error('音声モデルが読み込まれていません'));
+    let idx = 0;
+    for (let i = 1; i < this.busy.length; i++) if (this.busy[i] < this.busy[idx]) idx = i;
+    this.busy[idx]++;
+    return this.workers[idx].synthesize(text, voiceName, rate).finally(() => { this.busy[idx]--; });
+  }
+
+  dispose(): void {
+    for (const w of this.workers) w.dispose();
+    this.workers = [];
+    this.busy = [];
+  }
+}
+
+/** 端末の余力から並行生成数を決める。URL に ?tts_workers=N があればそれを使う（検証用） */
+export function decideWorkerCount(): number {
+  const forced = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('tts_workers')) : NaN;
+  if (Number.isFinite(forced) && forced >= 1 && forced <= 4) return Math.floor(forced);
+  const cores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency ?? 2) : 2;
+  // モデルは Worker ごとに約 200MB 使うため、多くても 2 つに抑える
+  return cores >= 4 ? 2 : 1;
+}
+
 export function createBackend(opts: BackendOptions = {}): KokoroBackend {
-  return WorkerBackend.isAvailable() ? new WorkerBackend(opts) : new InPageBackend(opts);
+  if (!WorkerBackend.isAvailable()) return new InPageBackend(opts);
+  const n = decideWorkerCount();
+  return n > 1 ? new WorkerPool(n, opts) : new WorkerBackend(opts);
 }
 
 export function progressLabel(file: string, loaded: number, total: number): string {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { KokoroSpeechService, KOKORO_VOICES, isKokoroVoice, type AudioSink } from '../../src/services/speech/kokoro/KokoroSpeechService';
 import { HybridSpeechService } from '../../src/services/speech/HybridSpeechService';
+import { WorkerPool, decideWorkerCount, progressLabel, type KokoroBackend } from '../../src/services/speech/kokoro/KokoroBackend';
 import type { SpeechService } from '../../src/services/speech/SpeechService';
 
 /** 再生を手動で終わらせられる差し替え用の再生先 */
@@ -138,5 +139,50 @@ describe('HybridSpeechService', () => {
     const h = new HybridSpeechService(stub('web', calls), stub('kokoro', calls));
     h.cancel();
     expect(calls).toEqual(['web.cancel', 'kokoro.cancel']);
+  });
+});
+
+describe('WorkerPool', () => {
+  it('空いている方に振り分け、全部の読み込みを待つ', async () => {
+    const made: { name: number; running: number; resolvers: ((v: Float32Array) => void)[] }[] = [];
+    const create = (): KokoroBackend => {
+      const self = { name: made.length, running: 0, resolvers: [] as ((v: Float32Array) => void)[] };
+      made.push(self);
+      return {
+        load: async () => {},
+        synthesize: () => { self.running++; return new Promise<Float32Array>((r) => self.resolvers.push((v) => { self.running--; r(v); })); },
+        dispose: () => {},
+      };
+    };
+    const pool = new WorkerPool(2, {}, create);
+    const stages: string[] = [];
+    await pool.load((m) => stages.push(m));
+    expect(made).toHaveLength(2);
+
+    const a = pool.synthesize('one', 'af_heart', 1);
+    const b = pool.synthesize('two', 'af_heart', 1);
+    expect(made[0].running).toBe(1);
+    expect(made[1].running).toBe(1); // 2 文目は空いている方へ
+    made[0].resolvers[0](new Float32Array(10));
+    made[1].resolvers[0](new Float32Array(20));
+    expect((await a).length).toBe(10);
+    expect((await b).length).toBe(20);
+  });
+
+  it('読み込み前に生成を頼まれたら理由を返す', async () => {
+    const pool = new WorkerPool(1, {}, () => ({ load: async () => {}, synthesize: async () => new Float32Array(1), dispose: () => {} }));
+    await expect(pool.synthesize('x', 'af_heart', 1)).rejects.toThrow(/読み込まれていません/);
+  });
+});
+
+describe('進行状況の表示', () => {
+  it('ファイル名を日本語の名前に変え、割合を出す', () => {
+    expect(progressLabel('model_quantized.onnx', 46, 92)).toBe('音声モデル 50%');
+    expect(progressLabel('us_gold.json', 1, 4)).toBe('発音辞書 25%');
+    expect(progressLabel('af_heart.bin', 512 * 1024, 0)).toBe('声のデータ 1MB');
+  });
+  it('並行生成数は端末のコア数から決める', () => {
+    expect(decideWorkerCount()).toBeGreaterThanOrEqual(1);
+    expect(decideWorkerCount()).toBeLessThanOrEqual(4);
   });
 });
