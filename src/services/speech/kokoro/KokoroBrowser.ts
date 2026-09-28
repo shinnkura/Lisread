@@ -53,23 +53,34 @@ export async function fetchCached(url: string, onProgress?: (p: KokoroProgress) 
 
 let ortPromise: Promise<OrtLike> | null = null;
 
+/** ランタイムが実際に起動したか、ダミーのモデルで確かめる。起動していれば「解析できない」で失敗する */
+async function warmUp(ort: { InferenceSession: { create(m: Uint8Array, o?: unknown): Promise<unknown> } }): Promise<void> {
+  try {
+    await ort.InferenceSession.create(new Uint8Array([0, 1, 2, 3]), { executionProviders: ['wasm'] });
+  } catch (e) {
+    const msg = (e as Error).message ?? String(e);
+    // モデル解析エラーは想定どおり（ランタイムは起動済み）。それ以外は起動失敗
+    if (/no available backend|Out of memory/i.test(msg)) throw e;
+  }
+}
+
 /**
- * ONNX Runtime（wasm 専用ビルド）を初期化する。iPhone Safari では、モデルなど大きなデータを
- * メモリに載せた後だと wasm のコンパイルが "Out of memory" で失敗するため、
- * 他の何よりも先に、ダミーのセッション作成でランタイムを実際に起動しておく。
+ * ONNX Runtime（wasm 専用ビルド）を初期化する。
+ * - iPhone Safari では、モデルなど大きなデータをメモリに載せた後だと wasm のコンパイルが
+ *   "Out of memory" で失敗するため、他の何よりも先にダミーのセッション作成で起動しておく
  */
 export function initOrtWasm(): Promise<OrtLike> {
   ortPromise ??= (async () => {
     const ort = await import('onnxruntime-web/wasm');
     ort.env.wasm.numThreads = 1;
-    ort.env.wasm.proxy = false;
     ort.env.wasm.wasmPaths = ORT_WASM_CDN;
+    // 推論は呼び出し側の Worker の中で動かす想定なので、ORT 自身の proxy は使わない
+    ort.env.wasm.proxy = false;
     try {
-      await ort.InferenceSession.create(new Uint8Array([0, 1, 2, 3]), { executionProviders: ['wasm'] });
+      await warmUp(ort);
     } catch (e) {
-      const msg = (e as Error).message ?? String(e);
-      // モデル解析エラーは想定どおり（ランタイムは起動済み）。それ以外は起動失敗として投げ直す
-      if (/no available backend|Out of memory/i.test(msg)) { ortPromise = null; throw e; }
+      ortPromise = null;
+      throw e;
     }
     return ort as unknown as OrtLike;
   })();

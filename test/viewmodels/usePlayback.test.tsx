@@ -78,3 +78,56 @@ describe('usePlayback', () => {
     expect(localStorage.getItem('lisread.voice')).toBe('v1');
   });
 });
+
+describe('usePlayback（準備が要るエンジン）', () => {
+  function preparable() {
+    const calls: string[] = [];
+    let prepared = false;
+    const speech = {
+      isSupported: () => true,
+      getVoices: async () => [{ id: 'kokoro:af_heart', name: 'Heart', lang: 'en-US', engine: 'kokoro' as const }],
+      speak: vi.fn(async (t: string) => { calls.push(`speak:${t}`); return 'ended' as const; }),
+      cancel: vi.fn(),
+      isPrepared: (id: string | null) => !id?.startsWith('kokoro:') || prepared,
+      prepare: vi.fn(async (_id: string | null, onProgress?: (m: string) => void) => { onProgress?.('音声モデル 50%'); prepared = true; calls.push('prepare'); }),
+      prefetch: vi.fn((t: string) => { calls.push(`prefetch:${t}`); }),
+    };
+    return { speech, calls };
+  }
+
+  it('音声を選んだ時点で準備を始め、進捗を表示する', async () => {
+    const { speech } = preparable();
+    const { result } = renderHook(() => usePlayback({ speech, getSentenceText: () => null, onSentenceChange: () => {}, onChapterEnd: async () => false }));
+    await act(async () => { result.current.setVoice('kokoro:af_heart'); });
+    expect(speech.prepare).toHaveBeenCalledWith('kokoro:af_heart', expect.any(Function));
+    await waitFor(() => expect(result.current.preparing).toBeNull());
+  });
+
+  it('再生時は準備を待ってから話し、次の文を先読みする', async () => {
+    const { speech, calls } = preparable();
+    const sentences = ['one', 'two', 'three'];
+    const { result } = renderHook(() => usePlayback({ speech, getSentenceText: (i) => sentences[i] ?? null, onSentenceChange: () => {}, onChapterEnd: async () => false }));
+    await act(async () => { localStorage.setItem('lisread.voice', 'kokoro:af_heart'); });
+    act(() => { result.current.setVoice('kokoro:af_heart'); });
+    await waitFor(() => expect(result.current.preparing).toBeNull());
+    act(() => result.current.play(0));
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    // prepare は 1 回だけ。各文の前に次の文が予約される
+    expect(calls.filter((c) => c === 'prepare')).toHaveLength(1);
+    expect(calls).toContain('prefetch:two');
+    expect(calls).toContain('prefetch:three');
+    expect(calls.indexOf('prefetch:two')).toBeLessThan(calls.indexOf('speak:one'));
+  });
+
+  it('準備に失敗したら理由を表示して再生を止める', async () => {
+    const { speech } = preparable();
+    speech.prepare = vi.fn(async () => { throw new Error('通信に失敗しました'); });
+    speech.isPrepared = () => false;
+    const { result } = renderHook(() => usePlayback({ speech, getSentenceText: () => 'one', onSentenceChange: () => {}, onChapterEnd: async () => false }));
+    act(() => { result.current.setVoice('kokoro:af_heart'); });
+    act(() => result.current.play(0));
+    await waitFor(() => expect(result.current.preparing).toMatch(/通信に失敗しました/));
+    expect(result.current.status).toBe('idle');
+    expect(speech.speak).not.toHaveBeenCalled();
+  });
+});

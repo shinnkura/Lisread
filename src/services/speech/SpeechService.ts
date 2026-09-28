@@ -1,11 +1,18 @@
-export interface Voice { id: string; name: string; lang: string }
+export interface Voice { id: string; name: string; lang: string; engine?: 'web' | 'kokoro' }
 export type SpeakResult = 'ended' | 'cancelled';
+export interface SpeakOptions { voiceId: string | null; rate: number }
 
 export interface SpeechService {
   isSupported(): boolean;
   getVoices(): Promise<Voice[]>;
-  speak(text: string, opts: { voiceId: string | null; rate: number }): Promise<SpeakResult>;
+  speak(text: string, opts: SpeakOptions): Promise<SpeakResult>;
   cancel(): void;
+  /** その音声がすぐ使えるか。準備（モデルの取得など）が要るエンジンだけ実装する */
+  isPrepared?(voiceId: string | null): boolean;
+  /** 音声を使えるようにする（モデルの取得など）。進捗は onProgress に日本語で渡す */
+  prepare?(voiceId: string | null, onProgress?: (message: string) => void): Promise<void>;
+  /** 次に読む文を先に用意しておく。実際の生成は現在の文の再生が始まってから行う */
+  prefetch?(text: string, opts: SpeakOptions): void;
 }
 
 const EN = /^en([-_]|$)/i;
@@ -37,7 +44,7 @@ export class WebSpeechService implements SpeechService {
       });
     }
     this.voiceCache = list;
-    return sortEnglish(list).map((v) => ({ id: v.voiceURI, name: v.name, lang: v.lang.replace('_', '-') }));
+    return sortEnglish(list).map((v) => ({ id: v.voiceURI, name: v.name, lang: v.lang.replace('_', '-'), engine: 'web' as const }));
   }
 
   speak(text: string, opts: { voiceId: string | null; rate: number }): Promise<SpeakResult> {

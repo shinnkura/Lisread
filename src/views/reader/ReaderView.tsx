@@ -134,7 +134,7 @@ export function ReaderView({ bookId }: { bookId: string }) {
         rate={playback.rate}
         voiceId={playback.voiceId}
         voices={playback.voices}
-        unavailable={playback.unavailable}
+        unavailable={playback.unavailable} preparing={playback.preparing}
         onToggle={playback.toggle}
         onNext={playback.next}
         onPrev={playback.prev}

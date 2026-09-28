@@ -20,6 +20,7 @@ export function usePlayback(deps: PlaybackDeps) {
   const [voiceId, setVoiceState] = useState<string | null>(() => localStorage.getItem('lisread.voice'));
   const [voices, setVoices] = useState<Voice[]>([]);
   const [unavailable, setUnavailable] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState<string | null>(null);
   const runId = useRef(0);
   const sidRef = useRef(0);
   const rateRef = useRef(rate); rateRef.current = rate;
@@ -33,6 +34,21 @@ export function usePlayback(deps: PlaybackDeps) {
   }, []);
 
   const setCurrent = (s: number) => { sidRef.current = s; setSid(s); };
+
+  /** モデルの取得など、その音声を使うための準備を行う。準備不要なら何もしない */
+  const ensurePrepared = async (id: string | null): Promise<boolean> => {
+    const d = depsRef.current;
+    if (d.speech.isPrepared?.(id) !== false) return true;
+    setPreparing('音声を準備しています…');
+    try {
+      await d.speech.prepare?.(id, (m) => setPreparing(`音声を準備しています… ${m}`));
+      setPreparing(null);
+      return true;
+    } catch (e) {
+      setPreparing(`音声の準備に失敗しました: ${(e as Error).message ?? String(e)}`);
+      return false;
+    }
+  };
 
   const run = (from: number) => {
     // 再生中に別の文へ飛ぶ場合（play(n) の呼び直しなど）は、キューに残る古い発話をここで確実に止める
@@ -52,7 +68,26 @@ export function usePlayback(deps: PlaybackDeps) {
         if (text === null) { setStatus('idle'); d.onSentenceChange(null); return; }
       }
       setCurrent(s); d.onSentenceChange(s);
-      const r = await d.speech.speak(text, { voiceId: voiceRef.current, rate: rateRef.current });
+      const opts = { voiceId: voiceRef.current, rate: rateRef.current };
+      // 準備が要る音声のときだけ待つ。標準音声では await を挟まず、クリックと同じ tick で speak まで進める
+      if (d.speech.isPrepared?.(opts.voiceId) === false) {
+        if (!(await ensurePrepared(opts.voiceId))) { setStatus('idle'); return; }
+        if (my !== runId.current) return;
+        d = depsRef.current;
+      }
+      // 次の文を予約しておく。実際の生成はこの文の再生が始まってから行われる
+      const nextText = d.getSentenceText(s + 1);
+      if (nextText) d.speech.prefetch?.(nextText, opts);
+      let r: 'ended' | 'cancelled';
+      try {
+        r = await d.speech.speak(text, opts);
+      } catch (e) {
+        if (my !== runId.current) return;
+        // 失敗を黙って飛ばすと無音のまま本が進んでしまうため、理由を出して止める
+        setPreparing(`読み上げに失敗しました: ${(e as Error).message ?? String(e)}`);
+        setStatus('idle');
+        return;
+      }
       if (my !== runId.current || r === 'cancelled') return;
       return loop(s + 1);
     };
@@ -83,9 +118,15 @@ export function usePlayback(deps: PlaybackDeps) {
   const next = useCallback(() => move(1), [move]);
   const prev = useCallback(() => move(-1), [move]);
   const setRate = useCallback((r: number) => { const c = clampRate(r); setRateState(c); localStorage.setItem('lisread.rate', String(c)); }, []);
-  const setVoice = useCallback((id: string | null) => { setVoiceState(id); if (id) localStorage.setItem('lisread.voice', id); else localStorage.removeItem('lisread.voice'); }, []);
+  const setVoice = useCallback((id: string | null) => {
+    setVoiceState(id);
+    if (id) localStorage.setItem('lisread.voice', id); else localStorage.removeItem('lisread.voice');
+    voiceRef.current = id;
+    // 選んだ時点で準備を始める（再生ボタンを押してから待たされないようにする）
+    void ensurePrepared(id);
+  }, []);
 
   useEffect(() => () => { runId.current++; depsRef.current.speech.cancel(); }, []);
 
-  return { status, sid, rate, voiceId, voices, unavailable, play, pause, toggle, next, prev, stop, setRate, setVoice };
+  return { status, sid, rate, voiceId, voices, unavailable, preparing, play, pause, toggle, next, prev, stop, setRate, setVoice };
 }
