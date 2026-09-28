@@ -1,6 +1,6 @@
 // Kokoro の実行場所を抽象化する。推論は数秒かかるので、既定では Web Worker 側で動かして
 // 画面が固まらないようにし、Worker が使えない環境ではページ内で動かす。
-import { loadKokoro, type KokoroModelFile } from './KokoroBrowser';
+import { initOrtWasm, loadKokoro, type KokoroModelFile } from './KokoroBrowser';
 
 export interface KokoroBackend {
   /** モデルと辞書を読み込む。進捗は日本語の短い文字列で通知する */
@@ -64,7 +64,18 @@ export class WorkerBackend implements KokoroBackend {
     return typeof Worker !== 'undefined';
   }
 
-  load(onStage: (message: string) => void): Promise<void> {
+  async load(onStage: (message: string) => void): Promise<void> {
+    // iPhone Safari は Worker の中だけで wasm を用意しようとすると Out of memory で失敗する。
+    // 先にページ側で用意しておくと、Worker 側はブラウザが持っている結果を使えるため成功する
+    try {
+      await initOrtWasm();
+    } catch {
+      // ここで失敗しても Worker 側で改めて試す
+    }
+    return this.startWorker(onStage);
+  }
+
+  private startWorker(onStage: (message: string) => void): Promise<void> {
     this.worker = new Worker(new URL('./kokoro.worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e: MessageEvent<WorkerOut>) => this.handle(e.data);
     this.worker.onerror = (e) => {
@@ -170,10 +181,48 @@ export function decideWorkerCount(): number {
   return 1;
 }
 
+/**
+ * まず Worker で動かし、それが駄目ならページ内実行に切り替える。
+ * ページ内だと生成中に画面が固まるが、まったく読み上げられないよりはよい。
+ */
+export class FallbackBackend implements KokoroBackend {
+  private inner: KokoroBackend;
+  private usedFallback = false;
+
+  constructor(private opts: BackendOptions = {}, private primary: () => KokoroBackend, private secondary: () => KokoroBackend) {
+    this.inner = primary();
+  }
+
+  async load(onStage: (message: string) => void): Promise<void> {
+    try {
+      await this.inner.load(onStage);
+    } catch (e) {
+      if (this.usedFallback) throw e;
+      this.usedFallback = true;
+      this.inner.dispose();
+      onStage('別の方法で読み込み直します');
+      this.inner = this.secondary();
+      await this.inner.load(onStage);
+    }
+  }
+
+  synthesize(text: string, voiceName: string, rate: number): Promise<Float32Array> {
+    return this.inner.synthesize(text, voiceName, rate);
+  }
+
+  dispose(): void {
+    this.inner.dispose();
+  }
+}
+
 export function createBackend(opts: BackendOptions = {}): KokoroBackend {
   if (!WorkerBackend.isAvailable()) return new InPageBackend(opts);
   const n = decideWorkerCount();
-  return n > 1 ? new WorkerPool(n, opts) : new WorkerBackend(opts);
+  return new FallbackBackend(
+    opts,
+    () => (n > 1 ? new WorkerPool(n, opts) : new WorkerBackend(opts)),
+    () => new InPageBackend(opts),
+  );
 }
 
 export function progressLabel(file: string, loaded: number, total: number): string {

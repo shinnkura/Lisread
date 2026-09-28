@@ -10,6 +10,8 @@ type In =
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let kokoro: LoadedKokoro | null = null;
+// 推論は 1 つずつ順番に行う（同じセッションを同時に使うと壊れるため）
+let queue: Promise<void> = Promise.resolve();
 
 ctx.onmessage = async (e: MessageEvent<In>) => {
   const msg = e.data;
@@ -27,6 +29,12 @@ ctx.onmessage = async (e: MessageEvent<In>) => {
     return;
   }
   if (msg.type === 'synth') {
+    queue = queue.then(() => handleSynth(msg));
+  }
+};
+
+async function handleSynth(msg: { id: number; text: string; voice: string; rate: number }): Promise<void> {
+  {
     try {
       if (!kokoro) throw new Error('音声モデルが読み込まれていません');
       const lang = msg.voice.startsWith('b') ? 'b' : 'a';
@@ -38,4 +46,4 @@ ctx.onmessage = async (e: MessageEvent<In>) => {
       ctx.postMessage({ type: 'error', id: msg.id, message: (err as Error).message ?? String(err) });
     }
   }
-};
+}

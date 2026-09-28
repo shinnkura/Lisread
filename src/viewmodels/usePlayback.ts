@@ -9,8 +9,10 @@ export interface PlaybackDeps {
   onChapterEnd(): Promise<boolean>;
 }
 
-/** 何文先まで先に作っておくか。並行生成できる数より少し多めにする */
+/** 再生中に何文先まで予約しておくか */
 const PREFETCH_AHEAD = 3;
+/** 停止・一時停止の間に作り置きしておく文の数。ここで貯めるほど再生が途切れにくくなる */
+const WARMUP_AHEAD = 12;
 
 const clampRate = (r: number) => Math.round(Math.min(2, Math.max(0.5, r)) * 10) / 10;
 const readRate = () => { const v = Number(localStorage.getItem('lisread.rate')); return v ? clampRate(v) : 1; };
@@ -37,6 +39,16 @@ export function usePlayback(deps: PlaybackDeps) {
   }, []);
 
   const setCurrent = (s: number) => { sidRef.current = s; setSid(s); };
+
+  /** 止まっている間に先の文を作り置きしておく（再生を押したときすぐ鳴るように） */
+  const warmUp = (count: number) => {
+    const d = depsRef.current;
+    for (let ahead = 0; ahead < count; ahead++) {
+      const t = d.getSentenceText(sidRef.current + ahead);
+      if (t === null) break;
+      d.speech.prefetch?.(t, { voiceId: voiceRef.current, rate: rateRef.current });
+    }
+  };
 
   /** モデルの取得など、その音声を使うための準備を行う。準備不要なら何もしない */
   const ensurePrepared = async (id: string | null): Promise<boolean> => {
@@ -80,18 +92,23 @@ export function usePlayback(deps: PlaybackDeps) {
         if (my !== runId.current) return;
         d = depsRef.current;
       }
-      // 先の文を予約しておく。実際の生成はこの文の再生が始まってから行われる
-      for (let ahead = 1; ahead <= PREFETCH_AHEAD; ahead++) {
-        const t = d.getSentenceText(s + ahead);
-        if (t === null) break;
-        d.speech.prefetch?.(t, opts);
-      }
       let r: 'ended' | 'cancelled';
       let started = false;
       // 生成に時間がかかるエンジンでは、鳴り出すまで「作っています」と出す（固まったように見えないため）
       const waiting = setTimeout(() => { if (!started && my === runId.current) setPreparing('音声を作っています…'); }, 400);
       try {
-        r = await d.speech.speak(text, { ...opts, onStart: () => { started = true; clearTimeout(waiting); setPreparing(null); } });
+        r = await d.speech.speak(text, {
+          ...opts,
+          onStart: () => {
+            started = true; clearTimeout(waiting); setPreparing(null);
+            // 鳴り始めてから次の文を予約する（今の文の生成を後回しにしないため）
+            for (let ahead = 1; ahead <= PREFETCH_AHEAD; ahead++) {
+              const t = depsRef.current.getSentenceText(s + ahead);
+              if (t === null) break;
+              depsRef.current.speech.prefetch?.(t, opts);
+            }
+          },
+        });
       } catch (e) {
         clearTimeout(waiting);
         if (my !== runId.current) return;
@@ -119,7 +136,13 @@ export function usePlayback(deps: PlaybackDeps) {
   const stopSpeaking = () => { runId.current++; depsRef.current.speech.cancel(); };
 
   const play = useCallback((fromSid?: number) => { run(fromSid ?? sidRef.current); }, []);
-  const pause = useCallback(() => { stopSpeaking(); setStatus('paused'); setPreparing(null); }, []);
+  const pause = useCallback(() => {
+    stopSpeaking();
+    setStatus('paused');
+    setPreparing(null);
+    // 止まっている間に先を作っておく
+    warmUp(WARMUP_AHEAD);
+  }, []);
   const stop = useCallback(() => { stopSpeaking(); setStatus('idle'); setCurrent(0); setPreparing(null); depsRef.current.onSentenceChange(null); }, []);
   const toggle = useCallback(() => { if (status === 'playing') pause(); else play(); }, [status, pause, play]);
   const move = useCallback((delta: number) => {
@@ -138,16 +161,7 @@ export function usePlayback(deps: PlaybackDeps) {
     if (id) localStorage.setItem('lisread.voice', id); else localStorage.removeItem('lisread.voice');
     voiceRef.current = id;
     // 選んだ時点で準備を始める（再生ボタンを押してから待たされないようにする）
-    void ensurePrepared(id).then((ok) => {
-      if (!ok) return;
-      // 続けて、これから読む文を先に作っておく
-      const d = depsRef.current;
-      for (let ahead = 0; ahead < PREFETCH_AHEAD; ahead++) {
-        const t = d.getSentenceText(sidRef.current + ahead);
-        if (t === null) break;
-        d.speech.prefetch?.(t, { voiceId: id, rate: rateRef.current });
-      }
-    });
+    void ensurePrepared(id).then((ok) => { if (ok) warmUp(WARMUP_AHEAD); });
   }, []);
 
   useEffect(() => () => { runId.current++; depsRef.current.speech.cancel(); }, []);

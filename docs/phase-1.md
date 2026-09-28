@@ -91,6 +91,8 @@ npm run build          # 本番ビルド（辞書生成 → 型チェック → 
 - 再生バーの「音声」で「自然な音声」から選ぶと、ブラウザ内で動くニューラル TTS（Kokoro-82M）で読み上げる。標準音声より人間に近い
 - 初回だけモデル（約 92MB）と発音辞書（約 12MB）を取得し、端末に保存する（Cache API）。2 回目以降はオフラインでも使える
 - 推論は Web Worker で動かす。メインスレッドで動かすと 1 文の生成中ずっと画面が固まるため
+- iPhone Safari は Worker の中だけで wasm を用意しようとすると Out of memory で失敗する。そのため Worker を起動する前にページ側で先にランタイムを用意し、ブラウザが持っている結果を Worker から使えるようにしている。それでも失敗した場合はページ内実行に切り替える（画面は固まるが読み上げはできる）
+- iOS の消音スイッチが入っていても鳴るよう `navigator.audioSession.type` を playback にする。再生ボタンと音声選択の操作の中で音声出力を解禁する
 - 音素化は espeak-ng の wasm ではなく misaki の英語発音辞書（Apache-2.0）を使う。iPhone Safari で espeak の wasm が応答しなくなるため
 - ONNX Runtime は GPU 対応版（21MB）ではなく wasm 専用ビルド（11MB、CDN から取得）を使う。iPhone Safari は前者をコンパイルできず Out of memory になる
 - 生成は実時間より遅い（iPhone で 1 文あたり約 1.8 倍）ため、Worker を複数立てて別々の文を同時に作り、遅れを取り戻す。コア数 4 以上の端末では 2 つ。`?tts_workers=N`（1〜4）で試せる

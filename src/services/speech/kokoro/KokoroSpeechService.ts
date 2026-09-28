@@ -2,7 +2,7 @@
 // 標準の Web Speech と違い、モデル（約 92MB）の取得が要る。初回だけ取得し、以後は端末に保存したものを使う。
 import type { SpeakOptions, SpeakResult, SpeechService, Voice } from '../SpeechService';
 import { KOKORO_SAMPLE_RATE } from './KokoroEngine';
-import { createBackend, type KokoroBackend } from './KokoroBackend';
+import { createBackend, decideWorkerCount, type KokoroBackend } from './KokoroBackend';
 
 export const KOKORO_PREFIX = 'kokoro:';
 
@@ -85,6 +85,8 @@ export class WebAudioSink implements AudioSink {
 
 interface Deps {
   backend?: KokoroBackend;
+  /** 同時に作る文の数。既定は端末に合わせて決める */
+  concurrency?: number;
   sink?: AudioSink;
   /** 生成済み音声を保持する上限（文の数） */
   cacheSize?: number;
@@ -103,11 +105,13 @@ export class KokoroSpeechService implements SpeechService {
   private sink: AudioSink;
   private cacheLimit: number;
   private backend: KokoroBackend;
+  private concurrency: number;
 
   constructor(deps: Deps = {}) {
     this.sink = deps.sink ?? new WebAudioSink();
     this.cacheLimit = deps.cacheSize ?? CACHE_LIMIT_DEFAULT;
     this.backend = deps.backend ?? createBackend();
+    this.concurrency = deps.concurrency ?? decideWorkerCount();
   }
 
   isSupported(): boolean {
@@ -166,26 +170,34 @@ export class KokoroSpeechService implements SpeechService {
       const pcm = await this.backend.synthesize(text, name, opts.rate);
       this.remember(key, pcm);
       return pcm;
-    })().finally(() => { this.inflight.delete(key); });
+    })().finally(() => { this.inflight.delete(key); this.pump(); });
     this.inflight.set(key, task);
     return task;
   }
 
   prefetch(text: string, opts: SpeakOptions): void {
-    // ここでは予約するだけ。今の文の再生が始まってから生成を始める
-    // （今の文の生成と取り合うと、待たされている今の文がさらに遅くなるため）
     if (!isKokoroVoice(opts.voiceId)) return;
-    if (this.pending.some((p) => p.text === text && p.opts.voiceId === opts.voiceId && p.opts.rate === opts.rate)) return;
+    const key = this.key(text, opts);
+    if (this.cache.has(key) || this.inflight.has(key)) return;
+    if (this.pending.some((p) => this.key(p.text, p.opts) === key)) return;
     this.pending.push({ text, opts });
-    // 何も生成していない（＝再生前や停止中）なら、待たずに作り始める。
-    // 再生ボタンを押した瞬間から鳴るまでの待ち時間を減らすため
-    if (this.inflight.size === 0) this.startPending();
+    this.pump();
   }
 
-  private startPending(): void {
-    const list = this.pending;
+  /**
+   * 予約した文を順に作る。今の文の生成・再生を邪魔しないよう、
+   * 同時に走らせる数は端末に合わせた上限まで、かつ再生中は今の文を優先する。
+   */
+  private pump(): void {
+    while (this.pending.length > 0 && this.inflight.size < this.concurrency) {
+      const p = this.pending.shift()!;
+      void this.generate(p.text, p.opts).catch(() => { /* 先読みの失敗は無視する */ });
+    }
+  }
+
+  /** 予約をすべて破棄する */
+  private clearPending(): void {
     this.pending = [];
-    for (const p of list) void this.generate(p.text, p.opts).catch(() => { /* 先読みの失敗は無視する */ });
   }
 
   async speak(text: string, opts: SpeakOptions): Promise<SpeakResult> {
@@ -210,7 +222,7 @@ export class KokoroSpeechService implements SpeechService {
     if (my !== this.generation) { handle.stop(); return 'cancelled'; }
     opts.onStart?.();
     this.current = handle;
-    this.startPending();
+    this.pump();
     await handle.done;
     if (my !== this.generation) return 'cancelled';
     this.current = null;
@@ -219,7 +231,7 @@ export class KokoroSpeechService implements SpeechService {
 
   cancel(): void {
     this.generation++;
-    this.pending = [];
+    this.clearPending();
     this.current?.stop();
     this.current = null;
   }

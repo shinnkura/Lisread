@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { KokoroSpeechService, KOKORO_VOICES, isKokoroVoice, type AudioSink } from '../../src/services/speech/kokoro/KokoroSpeechService';
 import { HybridSpeechService } from '../../src/services/speech/HybridSpeechService';
-import { WorkerPool, decideWorkerCount, progressLabel, type KokoroBackend } from '../../src/services/speech/kokoro/KokoroBackend';
+import { WorkerPool, FallbackBackend, decideWorkerCount, progressLabel, type KokoroBackend } from '../../src/services/speech/kokoro/KokoroBackend';
 import type { SpeechService } from '../../src/services/speech/SpeechService';
 
 /** 再生を手動で終わらせられる差し替え用の再生先 */
@@ -191,5 +191,25 @@ describe('進行状況の表示', () => {
   it('並行生成数は端末のコア数から決める', () => {
     expect(decideWorkerCount()).toBeGreaterThanOrEqual(1);
     expect(decideWorkerCount()).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('FallbackBackend', () => {
+  it('Worker が駄目ならページ内実行に切り替える', async () => {
+    const primary = { load: vi.fn(async () => { throw new Error('no available backend found. ERR: [wasm] RangeError: Out of memory'); }), synthesize: vi.fn(), dispose: vi.fn() };
+    const secondary = { load: vi.fn(async () => {}), synthesize: vi.fn(async () => new Float32Array(5)), dispose: vi.fn() };
+    const b = new FallbackBackend({}, () => primary, () => secondary);
+    const stages: string[] = [];
+    await b.load((m) => stages.push(m));
+    expect(primary.dispose).toHaveBeenCalled();
+    expect(secondary.load).toHaveBeenCalled();
+    expect(stages).toContain('別の方法で読み込み直します');
+    expect((await b.synthesize('x', 'af_heart', 1)).length).toBe(5);
+  });
+
+  it('切り替え先も駄目なら理由をそのまま返す', async () => {
+    const fail = () => ({ load: vi.fn(async () => { throw new Error('どちらも失敗'); }), synthesize: vi.fn(), dispose: vi.fn() });
+    const b = new FallbackBackend({}, fail, fail);
+    await expect(b.load(() => {})).rejects.toThrow('どちらも失敗');
   });
 });

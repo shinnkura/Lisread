@@ -165,3 +165,39 @@ describe('usePlayback（音声出力の解禁と生成中の表示）', () => {
     await act(async () => { finish!('ended'); });
   });
 });
+
+describe('usePlayback（作り置き）', () => {
+  function prefetchSpy() {
+    const asked: string[] = [];
+    const speech = {
+      isSupported: () => true,
+      getVoices: async () => [],
+      speak: vi.fn(async (_t: string, o: { onStart?: () => void }) => { o.onStart?.(); return 'ended' as const; }),
+      cancel: vi.fn(),
+      isPrepared: (id: string | null) => !id?.startsWith('kokoro:'),
+      prepare: vi.fn(async () => {}),
+      prefetch: vi.fn((t: string) => { asked.push(t); }),
+    };
+    return { speech, asked };
+  }
+  const sentences = Array.from({ length: 30 }, (_, i) => `s${i}`);
+
+  it('音声を選んだら先の文をまとめて作り置きする', async () => {
+    const { speech, asked } = prefetchSpy();
+    const { result } = renderHook(() => usePlayback({ speech, getSentenceText: (i) => sentences[i] ?? null, onSentenceChange: () => {}, onChapterEnd: async () => false }));
+    act(() => { result.current.setVoice('kokoro:af_heart'); });
+    await waitFor(() => expect(asked.length).toBe(12));
+    expect(asked[0]).toBe('s0');
+    expect(asked[11]).toBe('s11');
+  });
+
+  it('一時停止中も作り置きを進める', async () => {
+    const { speech, asked } = prefetchSpy();
+    const { result } = renderHook(() => usePlayback({ speech, getSentenceText: (i) => sentences[i] ?? null, onSentenceChange: () => {}, onChapterEnd: async () => false }));
+    act(() => { result.current.setVoice('kokoro:af_heart'); });
+    await waitFor(() => expect(asked.length).toBe(12));
+    asked.length = 0;
+    act(() => result.current.pause());
+    expect(asked.length).toBe(12);
+  });
+});
