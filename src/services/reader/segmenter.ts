@@ -32,19 +32,17 @@ export function getSentenceText(root: HTMLElement, sid: number): string | null {
 }
 
 /**
- * 保存済みの語に .saved を付ける。phrases（正規化済みの語の並び）は、連続する語がその並びと一致する箇所の全ての語に付ける
- * normalize は語の表記を phrases と同じ形に揃える関数
+ * 保存済みの語に .saved を付ける。phrases（語の並び）は、連続する語がその並びに当たる箇所の全ての語に付ける
+ * matchToken は本文の語がフレーズの語に当たるかの判定（活用形などをどこまで同じとみなすかは呼び出し側が決める）
  */
-export function applySavedMarkers(root: HTMLElement, isSaved: (word: string) => boolean, phrases: string[][] = [], normalize: (w: string) => string = (w) => w.toLowerCase()): void {
+export function applySavedMarkers(root: HTMLElement, isSaved: (word: string) => boolean, phrases: string[][] = [], matchToken: (raw: string, token: string) => boolean = (raw, t) => raw.toLowerCase() === t): void {
   const words = Array.from(root.querySelectorAll<HTMLElement>('.w'));
-  const marked = words.map((w) => isSaved(w.textContent ?? ''));
-  if (phrases.length) {
-    const norm = words.map((w) => normalize(w.textContent ?? ''));
-    for (const ph of phrases) {
-      if (!ph.length) continue;
-      for (let i = 0; i + ph.length <= norm.length; i++) {
-        if (ph.every((p, k) => norm[i + k] === p)) for (let k = 0; k < ph.length; k++) marked[i + k] = true;
-      }
+  const texts = words.map((w) => w.textContent ?? '');
+  const marked = texts.map((t) => isSaved(t));
+  for (const ph of phrases) {
+    if (!ph.length) continue;
+    for (let i = 0; i + ph.length <= texts.length; i++) {
+      if (ph.every((p, k) => matchToken(texts[i + k], p))) for (let k = 0; k < ph.length; k++) marked[i + k] = true;
     }
   }
   words.forEach((w, i) => w.classList.toggle('saved', marked[i]));

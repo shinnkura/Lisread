@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JaDictionary } from '../services/dictionary/EjDictionary';
 import type { EnDictionaryPort, EnEntry } from '../services/dictionary/FreeDictionary';
-import { lookupPhrase, lookupWord, matchesSaved, type PhrasePart } from '../services/dictionary/lookup';
+import { lookupPhrase, lookupWord, matchesSaved, phraseCandidates, type PhrasePart } from '../services/dictionary/lookup';
 import type { VocabularyRepositoryPort } from '../services/storage/VocabularyRepository';
 import type { WordTap } from '../views/reader/ChapterContent';
 import type { PlaybackStatus } from './usePlayback';
@@ -9,7 +9,8 @@ import type { PlaybackStatus } from './usePlayback';
 export interface DictionaryState { open: boolean; word: string; lemma: string; meaningJa: string | null; jaLoading: boolean; en: EnEntry | null; enLoading: boolean; saved: boolean; sentence: string; sid: number; phrase: boolean; parts: PhrasePart[] }
 const closed: DictionaryState = { open: false, word: '', lemma: '', meaningJa: null, jaLoading: false, en: null, enLoading: false, saved: false, sentence: '', sid: 0, phrase: false, parts: [] };
 
-interface Deps { jaDict: JaDictionary; enDict: EnDictionaryPort; vocabulary: VocabularyRepositoryPort; playback: { status: PlaybackStatus; pause(): void; play(): void } }
+// phraseDict は複数語の英英に使う辞書（熟語に強いもの）。省略時は enDict を使う
+interface Deps { jaDict: JaDictionary; enDict: EnDictionaryPort; phraseDict?: EnDictionaryPort; vocabulary: VocabularyRepositoryPort; playback: { status: PlaybackStatus; pause(): void; play(): void } }
 
 // 辞書ボトムシートの状態と、英和/英英の検索・保存トグル・常時マーカー用の判定を提供する
 export function useDictionary(deps: Deps, ctx: { bookId: string; chapterIndex: number }) {
@@ -36,13 +37,19 @@ export function useDictionary(deps: Deps, ctx: { bookId: string; chapterIndex: n
         // 複数語はフレーズ全体を 1 つの保存単位にする（lemma にはフレーズの正規化キーを入れる）
         const r = await lookupPhrase(tap.words!, d.jaDict);
         if (my !== seq.current) return;
-        const saved = !!(r.key && await d.vocabulary.findByLemma(r.key));
-        if (my !== seq.current) return;
-        setState((s) => ({ ...s, lemma: r.key, meaningJa: r.meaningJa, parts: r.parts, jaLoading: false, saved }));
+        setState((s) => ({ ...s, lemma: r.key, meaningJa: r.meaningJa, parts: r.parts, jaLoading: false }));
+        // 英英は辞書の見出しの形に寄せた候補をまとめて引き、元の形に近い順で最初に見つかったものを使う
         const ac = new AbortController(); abort.current = ac;
-        const en = r.key ? await d.enDict.lookup(r.key, ac.signal) : null;
+        const dict = d.phraseDict ?? d.enDict;
+        const candidates = [...new Set([r.key, ...phraseCandidates(tap.words!)])].filter(Boolean);
+        const found = await Promise.all(candidates.map((c) => dict.lookup(c, ac.signal)));
         if (my !== seq.current) return;
-        setState((s) => ({ ...s, en, enLoading: false }));
+        const en = found.find(Boolean) ?? null;
+        // 英和に成句が無く英英で見つかった場合は、英英の見出し（gave up → give up）を保存キーにして活用形にもマークが付くようにする
+        const key = r.meaningJa === null && en ? en.word.toLowerCase() : r.key;
+        const saved = !!(key && await d.vocabulary.findByLemma(key));
+        if (my !== seq.current) return;
+        setState((s) => ({ ...s, lemma: key, en, enLoading: false, saved }));
         return;
       }
       const r = await lookupWord(tap.word, d.jaDict);

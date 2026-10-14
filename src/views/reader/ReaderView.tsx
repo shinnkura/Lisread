@@ -4,7 +4,7 @@ import { navigate } from '../../app/router';
 import { useReader } from '../../viewmodels/useReader';
 import { usePlayback } from '../../viewmodels/usePlayback';
 import { useDictionary } from '../../viewmodels/useDictionary';
-import { normalizeWord } from '../../services/dictionary/Lemmatizer';
+import { phraseTokenMatches } from '../../services/dictionary/lookup';
 import { applySavedMarkers, getSentenceElements, getSentenceText } from '../../services/reader/segmenter';
 import { ChapterContent } from './ChapterContent';
 import { PlaybackBar } from './PlaybackBar';
@@ -68,13 +68,13 @@ export function ReaderView({ bookId }: { bookId: string }) {
   const playbackRef = useRef(playback); playbackRef.current = playback;
 
   const dictionary = useDictionary(
-    { jaDict: services.jaDict, enDict: services.enDict, vocabulary: services.vocabulary, playback: { status: playback.status, pause: playback.pause, play: playback.play } },
+    { jaDict: services.jaDict, enDict: services.enDict, phraseDict: services.phraseDict, vocabulary: services.vocabulary, playback: { status: playback.status, pause: playback.pause, play: playback.play } },
     { bookId, chapterIndex: reader.chapterIndex },
   );
 
   // 保存済み単語（活用形含む）とフレーズに常時マーカーを付ける。保存状態の変化と、章切り替え直後の再描画（tick）で再適用する
   useEffect(() => {
-    if (rootRef.current) applySavedMarkers(rootRef.current, dictionary.isSaved, dictionary.savedPhrases, normalizeWord);
+    if (rootRef.current) applySavedMarkers(rootRef.current, dictionary.isSaved, dictionary.savedPhrases, phraseTokenMatches);
   }, [dictionary.isSaved, dictionary.savedPhrases, tick]);
 
   useEffect(() => {

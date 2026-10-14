@@ -41,6 +41,12 @@ describe('segmentElement', () => {
     applySavedMarkers(root, () => false, [['up', 'and', 'away']]);
     expect(Array.from(root.querySelectorAll('.w.saved')).map((w) => w.textContent)).toEqual(['up', 'and', 'away']);
   });
+  it('applySavedMarkers は matchToken で活用形のフレーズにも .saved を付ける', () => {
+    const root = el('<p>She gave up. He gives up.</p>');
+    segmentElement(root);
+    applySavedMarkers(root, () => false, [['give', 'up']], (raw, t) => ({ gave: 'give', gives: 'give' } as Record<string, string>)[raw] === t || raw === t);
+    expect(Array.from(root.querySelectorAll('.w.saved')).map((w) => w.textContent)).toEqual(['gave', 'up', 'gives', 'up']);
+  });
   it('wordsInRange は選択が中身にかかる語だけを返す（境界に接するだけの語は含めない）', () => {
     const root = el('<p>He gave up quickly.</p>');
     segmentElement(root);

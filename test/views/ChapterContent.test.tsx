@@ -5,9 +5,6 @@ import type { LoadedChapter } from '../../src/viewmodels/useReader';
 
 const loaded = { chapter: { id: 'c', bookId: 'b', index: 0, href: 'c.xhtml', html: '<html><body><p>He gave up smoking. Then he slept.</p></body></html>' }, resolve: () => null } as unknown as LoadedChapter;
 
-// jsdom の Range には getBoundingClientRect が無いので、位置計算用に空の矩形を返させる
-if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect();
-
 function select(container: HTMLElement, from: string, to: string) {
   const ws = Array.from(container.querySelectorAll<HTMLElement>('.w'));
   const a = ws.find((w) => w.textContent === from)!, b = ws.find((w) => w.textContent === to)!;
@@ -23,6 +20,7 @@ describe('ChapterContent の範囲選択', () => {
     const onWordTap = vi.fn();
     const { container, queryByText, getByText } = render(<ChapterContent loaded={loaded} onReady={() => {}} onWordTap={onWordTap} />);
     select(container, 'gave', 'smoking');
+    expect(getByText('「gave up smoking」')).toBeTruthy();
     fireEvent.pointerDown(getByText('調べる'));
     expect(onWordTap).toHaveBeenCalledWith({ word: 'gave up smoking', words: ['gave', 'up', 'smoking'], sid: 0, wid: 1, sentence: 'He gave up smoking.' });
     expect(document.getSelection()?.isCollapsed).toBe(true);

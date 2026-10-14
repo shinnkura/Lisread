@@ -67,4 +67,15 @@ describe('useDictionary', () => {
     expect(result.current.savedPhrases).toEqual([['give', 'up']]);
     expect(result.current.isSaved('give')).toBe(false);
   });
+  it('英和に成句が無く英英で見つかったら、英英の見出しを保存キーにする（gave up → give up）', async () => {
+    const d = deps('idle');
+    const phraseDict = { lookup: vi.fn(async (w: string) => (w === 'gave up' ? { word: 'give up', meanings: [] } : null)) };
+    const { result } = renderHook(() => useDictionary({ ...d, jaDict: { lookup: async () => null }, phraseDict }, { bookId: 'b', chapterIndex: 0 }));
+    act(() => result.current.openFor({ word: 'gave up', words: ['gave', 'up'], sid: 0, wid: 0, sentence: 'She gave up.' }));
+    await waitFor(() => expect(result.current.state.enLoading).toBe(false));
+    expect(result.current.state.lemma).toBe('give up');
+    expect(d.enDict.lookup).not.toHaveBeenCalled();
+    await act(() => result.current.toggleSave());
+    expect(d.vocabulary.save).toHaveBeenCalledWith(expect.objectContaining({ word: 'gave up', lemma: 'give up' }));
+  });
 });

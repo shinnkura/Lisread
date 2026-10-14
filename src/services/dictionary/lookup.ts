@@ -33,10 +33,56 @@ export function phraseKey(words: string[]): string {
   return words.map(normalizeWord).filter(Boolean).join(' ');
 }
 
-// 複数語の選択を英和辞書で引く。成句として載っていなければ、語ごとの意味を並べて返す
+// 辞書の見出しでは、所有格・再帰代名詞は one's / oneself で書かれる（make up one's mind など）
+const POSSESSIVE = new Set(['my', 'your', 'his', 'her', 'its', 'our', 'their']);
+const REFLEXIVE = new Set(['myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'yourselves', 'themselves']);
+// 句動詞の間に挟まる目的語（look it up → look up）
+const OBJECT = new Set(['me', 'you', 'him', 'her', 'it', 'us', 'them']);
+const MAX_CANDIDATES = 8;
+
+/**
+ * 選択したフレーズを辞書の見出しの形に寄せた候補を、元の形に近い順に返す。
+ * 先頭の語の活用形を原形に戻し（gave up → give up）、代名詞を辞書の書き方に置き換える（his → one's）
+ */
+export function phraseCandidates(words: string[]): string[] {
+  const ws = words.map(normalizeWord).filter(Boolean);
+  const options = ws.map((w, i) => {
+    const o: (string | null)[] = [w];
+    if (i === 0) o.push(...lemmaCandidates(w));
+    if (POSSESSIVE.has(w)) o.push("one's");
+    if (REFLEXIVE.has(w)) o.push('oneself');
+    if (OBJECT.has(w) && i > 0 && i < ws.length - 1) o.push(null);
+    return o;
+  });
+  let acc: string[][] = [[]];
+  for (const o of options) acc = acc.flatMap((prefix) => o.map((w) => (w === null ? prefix : [...prefix, w])));
+  const out: string[] = [];
+  for (const c of acc) {
+    const key = c.join(' ');
+    if (c.length >= 2 && !out.includes(key)) out.push(key);
+    if (out.length >= MAX_CANDIDATES) break;
+  }
+  return out;
+}
+
+// 複数語の選択を英和辞書で引く。候補のどれかが成句として載っていればそれを、なければ語ごとの意味を返す
 export async function lookupPhrase(words: string[], dict: JaDictionary): Promise<PhraseLookupResult> {
-  const key = phraseKey(words);
-  const meaningJa = key ? await dict.lookup(key) : null;
-  const parts = meaningJa ? [] : await Promise.all(words.filter((w) => normalizeWord(w)).map((w) => lookupWord(w, dict)));
-  return { key, meaningJa, parts };
+  const candidates = phraseCandidates(words);
+  for (const c of candidates) {
+    const m = await dict.lookup(c);
+    if (m) return { key: c, meaningJa: m, parts: [] };
+  }
+  const parts = await Promise.all(words.filter((w) => normalizeWord(w)).map((w) => lookupWord(w, dict)));
+  return { key: candidates[0] ?? '', meaningJa: null, parts };
+}
+
+/** 本文の語 raw が、保存済みフレーズの語 token に当たるか（活用形と、one's / oneself の代名詞も同じとみなす） */
+export function phraseTokenMatches(raw: string, token: string): boolean {
+  const w = normalizeWord(raw);
+  if (w === token) return true;
+  if (token === "one's") return POSSESSIVE.has(w);
+  if (token === 'oneself') return REFLEXIVE.has(w);
+  let c = cache.get(w);
+  if (!c) { c = [w, ...lemmaCandidates(w)]; cache.set(w, c); }
+  return c.includes(token);
 }

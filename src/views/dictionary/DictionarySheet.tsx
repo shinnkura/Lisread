@@ -1,4 +1,5 @@
 import type { DictionaryState } from '../../viewmodels/useDictionary';
+import { phraseKey } from '../../services/dictionary/lookup';
 import './sheet.css';
 
 export function DictionarySheet({ state, onClose, onToggleSave }: { state: DictionaryState; onClose(): void; onToggleSave(): void }) {
@@ -9,8 +10,8 @@ export function DictionarySheet({ state, onClose, onToggleSave }: { state: Dicti
       <div className="sheet" role="dialog" aria-label="辞書" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
         <div className="sheet-head">
-          <div><span className="sheet-word">{state.word}</span>{!state.phrase && state.lemma !== state.word && <span className="sheet-lemma"> → {state.lemma}</span>}</div>
-          <button className={`btn ${state.saved ? '' : 'btn-primary'}`} onClick={onToggleSave} disabled={!state.lemma || state.jaLoading}>{state.saved ? '削除' : '保存'}</button>
+          <div><span className="sheet-word">{state.word}</span>{(state.phrase ? !state.enLoading && state.lemma !== phraseKey(state.word.split(/\s+/)) : state.lemma !== state.word) && <span className="sheet-lemma"> → {state.lemma}</span>}</div>
+          <button className={`btn ${state.saved ? '' : 'btn-primary'}`} onClick={onToggleSave} disabled={!state.lemma || state.jaLoading || (state.phrase && state.enLoading)}>{state.saved ? '削除' : '保存'}</button>
         </div>
         <section className="sheet-section">
           <h3>英和</h3>
@@ -27,7 +28,7 @@ export function DictionarySheet({ state, onClose, onToggleSave }: { state: Dicti
         </section>
         {online && (state.enLoading || state.en) && (
           <section className="sheet-section">
-            <h3>英英{state.en?.phonetic ? <span className="muted"> {state.en.phonetic}</span> : null}</h3>
+            <h3>英英{state.en?.phonetic ? <span className="muted"> {state.en.phonetic}</span> : null}{state.phrase && state.en ? <span className="muted">（出典: Wiktionary）</span> : null}</h3>
             {state.enLoading && !state.en && <p className="muted">読み込み中…</p>}
             {state.en?.meanings.map((m, i) => (
               <div key={i}><div className="pos">{m.partOfSpeech}</div><ol>{m.definitions.map((d, j) => <li key={j}>{d}</li>)}</ol></div>
