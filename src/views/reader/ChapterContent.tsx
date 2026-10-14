@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { LoadedChapter } from '../../viewmodels/useReader';
 import { sanitizeChapter } from '../../services/reader/sanitize';
 import { segmentElement, getSentenceText, wordsInRange } from '../../services/reader/segmenter';
@@ -63,8 +64,9 @@ export function ChapterContent({ loaded, onReady, onWordTap }: { loaded: LoadedC
   return (
     <>
       <div ref={host} className="chapter-host" onClick={onClick} />
-      {selected && (
-        // iPhone の標準メニューや選択範囲のつまみは選択範囲の近くに出るので、重ならないよう画面下に固定する
+      {selected && createPortal(
+        // iPhone の標準メニューや選択範囲のつまみは選択範囲の近くに出るので、重ならないよう画面下に固定する。
+        // 本文のスクロール領域の中に置くと iPhone では z-index が効かず再生パネルの下に隠れるため、body 直下に出す
         <div className="selection-bar">
           <span className="selection-text">「{selected.text}」</span>
           <button
@@ -73,7 +75,8 @@ export function ChapterContent({ loaded, onReady, onWordTap }: { loaded: LoadedC
             onPointerDown={(e) => { e.preventDefault(); lookupSelection(); }}
             onClick={(e) => { if (e.detail === 0) lookupSelection(); }}
           >調べる</button>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
