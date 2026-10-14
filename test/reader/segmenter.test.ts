@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { segmentElement, getSentenceText, getSentenceElements, applySavedMarkers } from '../../src/services/reader/segmenter';
+import { segmentElement, getSentenceText, getSentenceElements, applySavedMarkers, wordsInRange } from '../../src/services/reader/segmenter';
 
 function el(html: string) { const d = document.createElement('div'); d.innerHTML = html; return d; }
 
@@ -32,6 +32,26 @@ describe('segmentElement', () => {
     expect(Array.from(root.querySelectorAll('.w.saved')).map((w) => w.textContent)).toEqual(['stumbled']);
     applySavedMarkers(root, () => false);
     expect(root.querySelectorAll('.w.saved')).toHaveLength(0);
+  });
+  it('applySavedMarkers は保存済みフレーズの全ての出現箇所に .saved を付ける', () => {
+    const root = el('<p>He gave up. Then she gave, up and away. They Gave Up too.</p>');
+    segmentElement(root);
+    applySavedMarkers(root, () => false, [['gave', 'up']]);
+    expect(Array.from(root.querySelectorAll('.w.saved')).map((w) => w.textContent)).toEqual(['gave', 'up', 'gave', 'up', 'Gave', 'Up']);
+    applySavedMarkers(root, () => false, [['up', 'and', 'away']]);
+    expect(Array.from(root.querySelectorAll('.w.saved')).map((w) => w.textContent)).toEqual(['up', 'and', 'away']);
+  });
+  it('wordsInRange は選択が中身にかかる語だけを返す（境界に接するだけの語は含めない）', () => {
+    const root = el('<p>He gave up quickly.</p>');
+    segmentElement(root);
+    document.body.appendChild(root);
+    const ws = Array.from(root.querySelectorAll<HTMLElement>('.w'));
+    const r = document.createRange();
+    r.setStart(ws[1].firstChild!, 2); r.setEnd(ws[2].firstChild!, 2);
+    expect(wordsInRange(root, r).map((w) => w.textContent)).toEqual(['gave', 'up']);
+    r.setStartAfter(ws[0]); r.setEndBefore(ws[3]);
+    expect(wordsInRange(root, r).map((w) => w.textContent)).toEqual(['gave', 'up']);
+    root.remove();
   });
   // jsdom の DOM 生成は実ブラウザより一桁遅いため、ここでは回帰検知用に緩めた閾値を使う。
   // 実機での「1 秒以内」確認は受け入れ基準（実ブラウザでのテスト）で行う。

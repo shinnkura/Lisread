@@ -24,3 +24,19 @@ export function matchesSaved(raw: string, saved: Set<string>): boolean {
   if (!c) { c = [w, ...lemmaCandidates(w)]; cache.set(w, c); }
   return c.some((x) => saved.has(x));
 }
+
+export interface PhrasePart { word: string; lemma: string; meaningJa: string | null }
+export interface PhraseLookupResult { key: string; meaningJa: string | null; parts: PhrasePart[] }
+
+// 複数語の保存キー。語だけを正規化して半角スペースでつなぐ（句読点や改行の違いを無視して同じフレーズとみなす）
+export function phraseKey(words: string[]): string {
+  return words.map(normalizeWord).filter(Boolean).join(' ');
+}
+
+// 複数語の選択を英和辞書で引く。成句として載っていなければ、語ごとの意味を並べて返す
+export async function lookupPhrase(words: string[], dict: JaDictionary): Promise<PhraseLookupResult> {
+  const key = phraseKey(words);
+  const meaningJa = key ? await dict.lookup(key) : null;
+  const parts = meaningJa ? [] : await Promise.all(words.filter((w) => normalizeWord(w)).map((w) => lookupWord(w, dict)));
+  return { key, meaningJa, parts };
+}

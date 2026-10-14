@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JaDictionary } from '../services/dictionary/EjDictionary';
 import type { EnDictionaryPort, EnEntry } from '../services/dictionary/FreeDictionary';
-import { lookupWord, matchesSaved } from '../services/dictionary/lookup';
+import { lookupPhrase, lookupWord, matchesSaved, type PhrasePart } from '../services/dictionary/lookup';
 import type { VocabularyRepositoryPort } from '../services/storage/VocabularyRepository';
 import type { WordTap } from '../views/reader/ChapterContent';
 import type { PlaybackStatus } from './usePlayback';
 
-export interface DictionaryState { open: boolean; word: string; lemma: string; meaningJa: string | null; jaLoading: boolean; en: EnEntry | null; enLoading: boolean; saved: boolean; sentence: string; sid: number }
-const closed: DictionaryState = { open: false, word: '', lemma: '', meaningJa: null, jaLoading: false, en: null, enLoading: false, saved: false, sentence: '', sid: 0 };
+export interface DictionaryState { open: boolean; word: string; lemma: string; meaningJa: string | null; jaLoading: boolean; en: EnEntry | null; enLoading: boolean; saved: boolean; sentence: string; sid: number; phrase: boolean; parts: PhrasePart[] }
+const closed: DictionaryState = { open: false, word: '', lemma: '', meaningJa: null, jaLoading: false, en: null, enLoading: false, saved: false, sentence: '', sid: 0, phrase: false, parts: [] };
 
 interface Deps { jaDict: JaDictionary; enDict: EnDictionaryPort; vocabulary: VocabularyRepositoryPort; playback: { status: PlaybackStatus; pause(): void; play(): void } }
 
@@ -29,8 +29,22 @@ export function useDictionary(deps: Deps, ctx: { bookId: string; chapterIndex: n
     if (d.playback.status === 'playing') { d.playback.pause(); resumeOnClose.current = true; } else resumeOnClose.current = false;
     abort.current?.abort();
     const my = ++seq.current;
-    setState({ ...closed, open: true, word: tap.word, lemma: tap.word, sentence: tap.sentence, sid: tap.sid, jaLoading: true, enLoading: true });
+    const phrase = !!tap.words && tap.words.length >= 2;
+    setState({ ...closed, open: true, word: tap.word, lemma: phrase ? '' : tap.word, sentence: tap.sentence, sid: tap.sid, phrase, jaLoading: true, enLoading: true });
     void (async () => {
+      if (phrase) {
+        // 複数語はフレーズ全体を 1 つの保存単位にする（lemma にはフレーズの正規化キーを入れる）
+        const r = await lookupPhrase(tap.words!, d.jaDict);
+        if (my !== seq.current) return;
+        const saved = !!(r.key && await d.vocabulary.findByLemma(r.key));
+        if (my !== seq.current) return;
+        setState((s) => ({ ...s, lemma: r.key, meaningJa: r.meaningJa, parts: r.parts, jaLoading: false, saved }));
+        const ac = new AbortController(); abort.current = ac;
+        const en = r.key ? await d.enDict.lookup(r.key, ac.signal) : null;
+        if (my !== seq.current) return;
+        setState((s) => ({ ...s, en, enLoading: false }));
+        return;
+      }
       const r = await lookupWord(tap.word, d.jaDict);
       if (my !== seq.current) return;
       const saved = !!(await d.vocabulary.findByLemma(r.lemma));
@@ -60,6 +74,8 @@ export function useDictionary(deps: Deps, ctx: { bookId: string; chapterIndex: n
   }, [state, refreshSaved]);
 
   const isSaved = useCallback((raw: string) => matchesSaved(raw, savedLemmas), [savedLemmas]);
+  // 保存済みフレーズを語の並びにしたもの（本文のマーカー用）
+  const savedPhrases = useMemo(() => [...savedLemmas].filter((l) => l.includes(' ')).map((l) => l.split(' ')), [savedLemmas]);
 
-  return { state, savedLemmas, openFor, close, toggleSave, isSaved };
+  return { state, savedLemmas, savedPhrases, openFor, close, toggleSave, isSaved };
 }

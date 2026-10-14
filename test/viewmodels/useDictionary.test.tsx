@@ -13,7 +13,7 @@ function deps(status: PlaybackStatus) {
     savedLemmas: vi.fn(async () => new Set(store.map((e) => e.lemma))),
   };
   const playback = { status, pause: vi.fn(), play: vi.fn() };
-  const jaDict = { lookup: async (w: string) => (w === 'stumble' ? 'つまずく' : null) };
+  const jaDict = { lookup: async (w: string) => ({ stumble: 'つまずく', 'give up': 'やめる' } as Record<string, string>)[w] ?? null };
   const enDict = { lookup: vi.fn(async () => ({ word: 'stumble', meanings: [] })) };
   return { jaDict, enDict, vocabulary, playback };
 }
@@ -53,5 +53,18 @@ describe('useDictionary', () => {
     act(() => result.current.close());
     expect(d.playback.pause).not.toHaveBeenCalled();
     expect(d.playback.play).not.toHaveBeenCalled();
+  });
+  it('複数語はフレーズ全体を 1 つとして引いて保存し、マーカー用のフレーズ一覧に反映される', async () => {
+    const d = deps('idle');
+    const { result } = renderHook(() => useDictionary(d, { bookId: 'b', chapterIndex: 1 }));
+    act(() => result.current.openFor({ word: 'Give up,', words: ['Give', 'up'], sid: 0, wid: 0, sentence: 'Give up, he said.' }));
+    await waitFor(() => expect(result.current.state.meaningJa).toBe('やめる'));
+    expect(result.current.state.phrase).toBe(true);
+    expect(result.current.state.lemma).toBe('give up');
+    expect(d.enDict.lookup).toHaveBeenCalledWith('give up', expect.anything());
+    await act(() => result.current.toggleSave());
+    expect(d.vocabulary.save).toHaveBeenCalledWith({ word: 'Give up,', lemma: 'give up', contextSentence: 'Give up, he said.', bookId: 'b', chapterIndex: 1, sentenceIndex: 0 });
+    expect(result.current.savedPhrases).toEqual([['give', 'up']]);
+    expect(result.current.isSaved('give')).toBe(false);
   });
 });

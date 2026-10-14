@@ -4,6 +4,7 @@ import { navigate } from '../../app/router';
 import { useReader } from '../../viewmodels/useReader';
 import { usePlayback } from '../../viewmodels/usePlayback';
 import { useDictionary } from '../../viewmodels/useDictionary';
+import { normalizeWord } from '../../services/dictionary/Lemmatizer';
 import { applySavedMarkers, getSentenceElements, getSentenceText } from '../../services/reader/segmenter';
 import { ChapterContent } from './ChapterContent';
 import { PlaybackBar } from './PlaybackBar';
@@ -71,10 +72,10 @@ export function ReaderView({ bookId }: { bookId: string }) {
     { bookId, chapterIndex: reader.chapterIndex },
   );
 
-  // 保存済み単語（活用形含む）に常時マーカーを付ける。保存状態の変化と、章切り替え直後の再描画（tick）で再適用する
+  // 保存済み単語（活用形含む）とフレーズに常時マーカーを付ける。保存状態の変化と、章切り替え直後の再描画（tick）で再適用する
   useEffect(() => {
-    if (rootRef.current) applySavedMarkers(rootRef.current, dictionary.isSaved);
-  }, [dictionary.isSaved, tick]);
+    if (rootRef.current) applySavedMarkers(rootRef.current, dictionary.isSaved, dictionary.savedPhrases, normalizeWord);
+  }, [dictionary.isSaved, dictionary.savedPhrases, tick]);
 
   useEffect(() => {
     const onHide = () => { if (document.visibilityState === 'hidden') save(); };

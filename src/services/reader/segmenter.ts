@@ -31,8 +31,34 @@ export function getSentenceText(root: HTMLElement, sid: number): string | null {
   return els.length ? els.map((e) => e.textContent ?? '').join('') : null;
 }
 
-export function applySavedMarkers(root: HTMLElement, isSaved: (word: string) => boolean): void {
-  root.querySelectorAll<HTMLElement>('.w').forEach((w) => w.classList.toggle('saved', isSaved(w.textContent ?? '')));
+/**
+ * 保存済みの語に .saved を付ける。phrases（正規化済みの語の並び）は、連続する語がその並びと一致する箇所の全ての語に付ける
+ * normalize は語の表記を phrases と同じ形に揃える関数
+ */
+export function applySavedMarkers(root: HTMLElement, isSaved: (word: string) => boolean, phrases: string[][] = [], normalize: (w: string) => string = (w) => w.toLowerCase()): void {
+  const words = Array.from(root.querySelectorAll<HTMLElement>('.w'));
+  const marked = words.map((w) => isSaved(w.textContent ?? ''));
+  if (phrases.length) {
+    const norm = words.map((w) => normalize(w.textContent ?? ''));
+    for (const ph of phrases) {
+      if (!ph.length) continue;
+      for (let i = 0; i + ph.length <= norm.length; i++) {
+        if (ph.every((p, k) => norm[i + k] === p)) for (let k = 0; k < ph.length; k++) marked[i + k] = true;
+      }
+    }
+  }
+  words.forEach((w, i) => w.classList.toggle('saved', marked[i]));
+}
+
+/** 選択範囲が中身に 1 文字以上かかっている語 span を文書順に返す */
+export function wordsInRange(root: HTMLElement, range: Range): HTMLElement[] {
+  const wr = root.ownerDocument.createRange();
+  return Array.from(root.querySelectorAll<HTMLElement>('.w')).filter((w) => {
+    if (!range.intersectsNode(w)) return false;
+    wr.selectNodeContents(w);
+    // 選択の終わりが語の頭以前、または選択の始まりが語の末尾以降なら、境界に接しているだけなので含めない
+    return range.compareBoundaryPoints(Range.START_TO_END, wr) > 0 && range.compareBoundaryPoints(Range.END_TO_START, wr) < 0;
+  });
 }
 
 /** 直近のブロック要素が同じ連続テキストノードをひとまとめにする */
